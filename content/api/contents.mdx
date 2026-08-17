@@ -1,0 +1,227 @@
+---
+title: Contents
+description: The Content resource — the lower-level lifecycle behind inklet.push, including create, confirm, and upload ticket refresh.
+---
+
+import { Callout } from "nextra/components";
+
+# Contents
+
+A Content is one submission: a set of assets plus your intent. Most
+applications should use [`inklet.push.*`](/push), which drives this resource
+for you. Reach for it directly when you need to control the individual calls.
+
+## `retrieve()`
+
+```ts
+const content = await inklet.contents.retrieve("content_123");
+```
+
+The main use is [polling](/lifecycle#polling) after a push.
+
+## `list()`
+
+```ts
+const page = await inklet.contents.list({ mode: "manual", state: "ready" });
+```
+
+```ts
+list(options?: ListContentsOptions): Promise<ContentPage>
+
+interface ListContentsOptions {
+  state?: "pending" | "processing" | "ready" | "failed";
+  mode?: "auto" | "manual" | "hardcode";
+  cursor?: string;
+  limit?: number; // 1–50
+}
+```
+
+An out-of-range value for `state` or `mode` throws `ConfigurationError`
+locally.
+
+## `create()`
+
+```ts
+create(input: CreateContentRequest, idempotencyKey: string): Promise<CreateContentResponse>
+```
+
+```ts
+interface CreateContentRequest {
+  mode: "auto" | "manual" | "hardcode";
+  displayId?: string | null;
+  intent?: string | null;
+  title?: string | null;
+  assets: readonly CreateContentAssetInput[];
+}
+```
+
+<Callout type="warning">
+  Note the asset shape here differs from [`inklet.assets.*`](/api/assets).
+  Binary assets are declared by **metadata only** — `filename`, `contentType`,
+  `sizeBytes` — because the bytes go to a presigned URL afterwards, not in this
+  request body.
+</Callout>
+
+```ts
+type CreateContentAssetInput =
+  | { type: "text"; text: string }
+  | { type: "link"; url: string }
+  | { type: "image"; filename: string; contentType: AllowedImageContentType; sizeBytes: number }
+  | { type: "file"; filename: string; contentType: AllowedFileContentType; sizeBytes: number };
+```
+
+Returns the Content plus one upload ticket per binary asset:
+
+```ts
+interface CreateContentResponse {
+  content: Content;
+  uploadTickets: readonly UploadTicket[];
+}
+
+interface UploadTicket {
+  assetIndex: number;
+  url: string;
+  fields: Readonly<Record<string, string>>;
+  expiresAt: string;
+}
+```
+
+`idempotencyKey` is required here — 8–128 printable ASCII characters, no
+spaces. It is sent as the `idempotency-key` header.
+
+### Validation
+
+Enforced locally, before the request:
+
+| Field | Rule |
+| --- | --- |
+| `mode` | Must be one of the three modes |
+| `displayId` | Required for `manual`/`hardcode`; must be omitted for `auto` |
+| `assets` | 1–50 entries |
+| Hardcode assets | Exactly one asset, and it must be a PNG or JPEG image |
+| `sizeBytes` | Integer, 1 to 10 MiB |
+| Link URLs | Absolute HTTP(S), no embedded credentials |
+| Text | At least one non-whitespace character |
+
+## `confirm()`
+
+Closes uploads and starts processing:
+
+```ts
+const content = await inklet.contents.confirm(content.id);
+```
+
+Check `content.upload.status` afterwards:
+
+| Status | Meaning |
+| --- | --- |
+| `awaiting_upload` | Nothing uploaded yet |
+| `partial` | Some assets missing — `upload.failedAssetIndexes` lists them |
+| `complete` | All assets present |
+
+## `refreshUploadTickets()`
+
+New presigned URLs for assets that failed to upload:
+
+```ts
+const refreshed = await inklet.contents.refreshUploadTickets(content.id, [0, 2]);
+```
+
+`assetIndexes` must be one or more unique non-negative integers; anything else
+throws `ConfigurationError`. Returns the same shape as `create()`.
+
+## The `Content` type
+
+```ts
+interface Content {
+  id: string;
+  mode: "auto" | "manual" | "hardcode";
+  requestedDisplayId: string | null;
+  intent: string | null;
+  title: string | null;
+  state: "pending" | "processing" | "ready" | "failed";
+  assets: readonly ContentAsset[];
+  upload: ContentUpload;
+  processing: ContentProcessing;
+  presentationIds: readonly string[];
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+```ts
+interface ContentAsset {
+  assetIndex: number;
+  type: "text" | "link" | "image" | "file";
+  text: string | null;
+  url: string | null;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  uploadState: "pending" | "uploaded" | "failed";
+}
+
+interface ContentUpload {
+  status: "awaiting_upload" | "partial" | "complete";
+  failedAssetIndexes: readonly number[];
+}
+
+interface ContentProcessing {
+  stage:
+    | "awaiting_upload"
+    | "fetching_links"
+    | "summarizing"
+    | "routing"
+    | "creating_presentations"
+    | "complete"
+    | "failed"
+    | null;
+  warnings: readonly PresentationProblem[];
+  error: PresentationProblem | null;
+}
+```
+
+`warnings` is worth logging even on success — it is where Inklet reports things
+like a link it could not fetch, or a display it skipped.
+
+## Doing it by hand
+
+The full sequence `push.*` performs, if you need to own each step:
+
+```ts
+const created = await inklet.contents.create(
+  {
+    mode: "manual",
+    displayId: "display_123",
+    title: "Menu",
+    assets: [
+      { type: "text", text: "Tonight" },
+      {
+        type: "file",
+        filename: "menu.pdf",
+        contentType: "application/pdf",
+        sizeBytes: bytes.byteLength,
+      },
+    ],
+  },
+  "menu-2026-08-15",
+);
+
+for (const ticket of created.uploadTickets) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(ticket.fields)) {
+    form.append(key, value);
+  }
+  form.append("file", new Blob([bytes], { type: "application/pdf" }), "menu.pdf");
+
+  await fetch(ticket.url, { method: "POST", body: form });
+}
+
+const content = await inklet.contents.confirm(created.content.id);
+```
+
+<Callout>
+  Note the upload `fetch` above carries no Inklet credentials — that is
+  deliberate, and `push.*` does the same. Never attach your PAT to a storage
+  URL.
+</Callout>

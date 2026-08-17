@@ -1,0 +1,204 @@
+---
+title: Lifecycle
+description: Content and Presentation states in the inklet SDK, how to poll for a finished render, and how idempotency keys make a push safe to replay.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Lifecycle
+
+A push is a request, not a render. The call returns as soon as Inklet has your
+assets; summarising, routing, and rendering happen after — and a display only
+shows the result once it wakes and confirms it.
+
+This page is the difference between "the call succeeded" and "it is on the wall".
+
+## Content states
+
+```text
+pending ──→ processing ──→ ready
+                       └─→ failed
+```
+
+| State | Meaning |
+| --- | --- |
+| `pending` | Created; assets not yet confirmed. |
+| `processing` | Confirmed and working. This is the normal state right after a push. |
+| `ready` | Finished. `presentationIds` is populated and persisted. |
+| `failed` | Gave up. `processing.error` explains why. |
+
+### Processing stages
+
+While `processing`, `content.processing.stage` reports where it is:
+
+```text
+awaiting_upload → fetching_links → summarizing → routing → creating_presentations → complete
+```
+
+A stage of `failed` accompanies the `failed` state. These are for observability
+— log them, show them in a dashboard — not for control flow. Branch on `state`.
+
+## Presentation states
+
+A Presentation is one rendered frame for one display.
+
+```text
+preparing ──→ queued ──→ published ──→ confirmed
+                                   └─→ expired
+                                   └─→ failed
+```
+
+| State | Meaning |
+| --- | --- |
+| `preparing` | Render worker is producing the PNG, RAW2, and RAW4 files. |
+| `queued` | Rendered and waiting for the display to ask for work. |
+| `published` | Handed to the display. |
+| `confirmed` | The display reported it is showing this frame. |
+| `expired` | Superseded or timed out before it was shown. |
+| `failed` | Rendering or delivery failed; see `presentation.failure`. |
+
+<Callout type="warning">
+  A `ready` Content means its Presentation IDs are **persisted**, not that every
+  frame is rendered. An individual Presentation can still be `preparing` for a
+  moment after that. If you need the image bytes, poll the Presentation too.
+</Callout>
+
+## Polling
+
+<Steps>
+
+### Wait for the Content
+
+```ts
+const result = await inklet.push.auto({ assets });
+
+let content = await inklet.contents.retrieve(result.contentId);
+
+while (content.state === "processing" || content.state === "pending") {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  content = await inklet.contents.retrieve(content.id);
+}
+
+if (content.state === "failed") {
+  throw new Error(content.processing.error?.message ?? "push failed");
+}
+```
+
+### Wait for the frame, if you need it
+
+```ts
+for (const id of content.presentationIds) {
+  let presentation = await inklet.presentations.retrieve(id, { format: "png" });
+
+  while (presentation.state === "preparing") {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    presentation = await inklet.presentations.retrieve(id, { format: "png" });
+  }
+
+  if (presentation.image) {
+    console.log(presentation.image.url, presentation.image.expiresAt);
+  }
+}
+```
+
+</Steps>
+
+A production poller should add a ceiling and back off rather than looping at a
+fixed interval forever:
+
+```ts
+async function waitForContent(contentId: string, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  let delay = 500;
+
+  while (Date.now() < deadline) {
+    const content = await inklet.contents.retrieve(contentId);
+    if (content.state === "ready" || content.state === "failed") return content;
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 5_000);
+  }
+
+  throw new Error(`Content ${contentId} did not settle in ${timeoutMs}ms`);
+}
+```
+
+<Callout>
+  A display shows a frame when it next wakes, which depends on its
+  `syncIntervalMinutes`. `confirmed` can therefore be minutes away even when
+  everything succeeded immediately. Read `display.nextSyncAt` to know when to
+  expect it.
+</Callout>
+
+## Idempotency
+
+Every push carries an idempotency key. If you omit it, the SDK generates one
+and returns it in the result:
+
+```ts
+const result = await inklet.push.auto({ assets });
+console.log(result.idempotencyKey); // "sdk-4f3c…"
+```
+
+To make your own retries safe, supply and reuse your own key:
+
+```ts
+const key = `daily-brief-${new Date().toISOString().slice(0, 10)}`;
+
+await inklet.push.auto({ idempotencyKey: key, assets });
+await inklet.push.auto({ idempotencyKey: key, assets }); // same push, not a second one
+```
+
+Keys must be **8–128 printable ASCII characters with no spaces**. Anything else
+throws a `ConfigurationError`.
+
+<Callout>
+  A generated key is only useful if you keep it. If you plan to retry, pass your
+  own — derived from something stable in your domain, like a date, a record id,
+  or a job id.
+</Callout>
+
+## Uploads, retries, and partial content
+
+For binary assets, `push.*` does more than one round trip:
+
+<Steps>
+
+### Create
+
+The Content is created and the backend returns one presigned upload ticket per
+binary asset.
+
+### Upload
+
+Each asset is uploaded directly to its ticket URL, in parallel. Your token is
+not attached to these requests.
+
+### Refresh once
+
+If any upload fails, the SDK requests fresh tickets for exactly the failed
+assets and retries them once.
+
+### Confirm
+
+The Content is confirmed. If it comes back `partial`, the SDK refreshes and
+retries the still-missing assets once more, then confirms again.
+
+</Steps>
+
+If assets are still missing after that, the SDK throws:
+
+```ts
+import { AssetUploadError } from "@inklethq/sdk";
+
+try {
+  await inklet.push.manual({ displayId, assets });
+} catch (error) {
+  if (error instanceof AssetUploadError) {
+    console.error(error.contentId, error.failedAssetIndexes);
+  }
+}
+```
+
+`failedAssetIndexes` maps back to the positions in the array you passed, so you
+can identify exactly which files did not make it.

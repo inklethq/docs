@@ -1,0 +1,80 @@
+---
+title: Manual Push
+description: inklet.push.manual targets one display by id while Inklet still summarises and lays out the assets.
+---
+
+import { Callout } from "nextra/components";
+
+# Manual Push
+
+Use Manual when you know the room but still want Inklet to set the type. The
+asset pipeline is identical to Auto — links are fetched, content is summarised,
+layout is generated — only the routing decision moves to you.
+
+```ts
+import { readFile } from "node:fs/promises";
+
+const result = await inklet.push.manual({
+  displayId: "display_123",
+  title: "This week's trend",
+  assets: [
+    inklet.assets.image({
+      data: await readFile("chart.png"),
+      filename: "chart.png",
+      contentType: "image/png",
+    }),
+    inklet.assets.text("Orders are up in the north region."),
+  ],
+});
+```
+
+## Signature
+
+```ts
+inklet.push.manual(input: ManualPushInput): Promise<ManualPushResult>
+
+interface ManualPushInput {
+  displayId: string;
+  assets: readonly InkletAsset[];
+  title?: string;
+  intent?: string;
+  idempotencyKey?: string;
+}
+```
+
+## Finding the display id
+
+```ts
+const page = await inklet.displays.list({ limit: 50 });
+
+const kitchen = page.items.find((display) =>
+  display.tags.includes("kitchen"),
+);
+
+if (kitchen) {
+  await inklet.push.manual({
+    displayId: kitchen.id,
+    assets: [inklet.assets.text("Dinner: 7pm")],
+  });
+}
+```
+
+Displays carry both a `name` and an optional `nickname`, plus `tags` — any of
+which can serve as your lookup key. See [Displays](/api/displays).
+
+<Callout>
+  Check `display.capabilities` before sending format-sensitive content. A panel
+  declares its `pixelWidth`, `pixelHeight`, `colorMode`, and the image content
+  types it accepts.
+</Callout>
+
+## Errors specific to Manual
+
+| Condition | Error |
+| --- | --- |
+| `displayId` missing or blank | `ConfigurationError` — "Manual Push requires displayId." |
+| `assets` empty | `ConfigurationError` — "Manual Push requires at least one Asset." |
+| Display id does not exist | `NotFoundError` (from the backend) |
+| Token cannot reach that display | `PermissionDeniedError` |
+
+The first two throw locally; the last two come back from the API.

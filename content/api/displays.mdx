@@ -1,0 +1,174 @@
+---
+title: Displays
+description: Reading inklet displays — list, retrieve, queue, and the currently confirmed presentation.
+---
+
+import { Callout } from "nextra/components";
+
+# Displays
+
+`inklet.displays` is read-only. Displays are bound to your account through the
+Portal or the mobile app; the SDK observes them.
+
+## `list()`
+
+```ts
+const page = await inklet.displays.list({ limit: 20 });
+```
+
+```ts
+list(options?: ListDisplaysOptions): Promise<DisplayPage>
+
+interface ListDisplaysOptions {
+  cursor?: string;
+  limit?: number; // integer, 1–50
+}
+```
+
+Returns a cursor page:
+
+```ts
+interface DisplayPage {
+  items: readonly Display[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+```
+
+Paging through everything:
+
+```ts
+let cursor: string | undefined;
+const all = [];
+
+do {
+  const page = await inklet.displays.list({ cursor, limit: 50 });
+  all.push(...page.items);
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+```
+
+A `limit` outside 1–50, or a non-integer, throws `ConfigurationError` locally.
+
+## `retrieve()`
+
+```ts
+const display = await inklet.displays.retrieve("display_123");
+```
+
+Throws `NotFoundError` if the id is unknown, and `ConfigurationError` if the id
+is not a non-empty string.
+
+## `listQueue()`
+
+What is waiting for a display, optionally within a time range:
+
+```ts
+const queue = await inklet.displays.listQueue(display.id, {
+  from: new Date("2026-08-01T00:00:00Z"),
+  to: new Date(),
+  limit: 20,
+});
+```
+
+```ts
+listQueue(displayId: string, options?: ListDisplayQueueOptions): Promise<DisplayQueuePage>
+
+interface ListDisplayQueueOptions {
+  cursor?: string;
+  limit?: number;
+  from?: string | Date;
+  to?: string | Date;
+}
+```
+
+`from` and `to` accept a `Date` or anything `new Date()` parses; both are sent
+as ISO strings. An unparseable value, or `to` earlier than `from`, throws
+`ConfigurationError`.
+
+Each item:
+
+```ts
+interface DisplayQueueItem {
+  id: string;
+  displayId: string;
+  contentIds: readonly string[];
+  mode: "auto" | "manual" | "hardcode" | "";
+  state: PresentationState;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+## `current()`
+
+The confirmed Presentation a display is showing, or `null`:
+
+```ts
+const current = await inklet.displays.current(display.id, { format: "png" });
+
+if (current?.image) {
+  console.log(current.image.url);
+} else {
+  console.log("nothing confirmed yet");
+}
+```
+
+```ts
+current(displayId: string, options?: { format?: "png" | "raw2" | "raw4" }): Promise<Presentation | null>
+```
+
+<Callout>
+  `null` is a normal answer, not an error — a display that has never confirmed
+  a frame has no current Presentation. Handle it before reading `.image`.
+</Callout>
+
+## The `Display` type
+
+```ts
+interface Display {
+  id: string;
+  hardwareId: string;
+  thingName: string;
+  name: string;
+  nickname: string | null;
+  firmware: string | null;
+  batteryPercent: number | null;
+  online: boolean;
+  lastSeenAt: string | null;
+  stateUpdatedAt: string | null;
+  boundAt: string | null;
+  tags: readonly string[];
+  syncIntervalMinutes: number | null;
+  nextSyncAt: string | null;
+  currentPresentationId: string | null;
+  currentPresentationUpdatedAt: string | null;
+  pendingPresentationId: string | null;
+  capabilities: DisplayCapabilities;
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `name` / `nickname` | `name` is the bound device name; `nickname` is user-set and may be `null`. |
+| `tags` | Free-form labels — a practical routing key for Manual pushes. |
+| `online` | Whether the panel is currently reachable. |
+| `syncIntervalMinutes` | How often it wakes to ask for work. |
+| `nextSyncAt` | When to expect the next pickup. |
+| `pendingPresentationId` | Handed over but not yet confirmed. |
+
+### Capabilities
+
+```ts
+interface DisplayCapabilities {
+  pixelWidth: number;
+  pixelHeight: number;
+  orientation: string;
+  colorMode: string;
+  supportedImageContentTypes: readonly string[];
+  supportedOutputFormats: readonly ("png" | "raw2" | "raw4")[];
+}
+```
+
+Read these before sending format-sensitive content — particularly for
+[Hardcode pushes](/push/hardcode), where you control the pixels.

@@ -1,0 +1,76 @@
+---
+title: Auto Push
+description: inklet.push.auto lets Inklet choose which compatible displays receive the content and how it is laid out.
+---
+
+import { Callout } from "nextra/components";
+
+# Auto Push
+
+Use Auto when you have something worth showing and no strong opinion about
+where it goes. Inklet reads the assets, picks the compatible displays, and
+handles the layout.
+
+```ts
+const result = await inklet.push.auto({
+  idempotencyKey: "daily-brief-2026-08-15",
+  title: "Daily brief",
+  intent: "Make the key update easy to scan",
+  assets: [
+    inklet.assets.text("Revenue is up 12% week over week."),
+    inklet.assets.link("https://example.com/report"),
+  ],
+});
+```
+
+## Signature
+
+```ts
+inklet.push.auto(input: AutoPushInput): Promise<AutoPushResult>
+
+interface AutoPushInput {
+  assets: readonly InkletAsset[];
+  title?: string;
+  intent?: string;
+  idempotencyKey?: string;
+}
+```
+
+`displayId` is not accepted — passing one to the underlying Content resource
+throws `ConfigurationError` ("Auto Content must omit displayId"). Auto is
+defined by not naming a target.
+
+## Which displays receive it
+
+Inklet decides, based on the assets, your account's displays, and their
+declared capabilities. A Content can produce several Presentations — one per
+display it routed to — which is why `presentationIds` is an array.
+
+To see where it actually landed, read the Content once it is `ready` and
+retrieve each Presentation:
+
+```ts
+const content = await inklet.contents.retrieve(result.contentId);
+
+for (const id of content.presentationIds) {
+  const presentation = await inklet.presentations.retrieve(id);
+  console.log(presentation.displayId, presentation.state);
+}
+```
+
+<Callout>
+  Auto can route to zero displays if none are compatible with what you sent.
+  A `ready` Content with an empty `presentationIds` is the signal — check
+  `content.processing.warnings` for the reason.
+</Callout>
+
+## Errors specific to Auto
+
+| Condition | Error |
+| --- | --- |
+| `assets` missing or not an array | `ConfigurationError` — "Auto Push requires an assets array." |
+| `assets` empty | `ConfigurationError` — "Auto Push requires at least one Asset." |
+| More than 50 assets | `ConfigurationError` |
+| An asset fails validation | `ConfigurationError`, naming the asset index |
+
+All of these throw locally, before a request is sent.

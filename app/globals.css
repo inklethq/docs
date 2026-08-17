@@ -1,0 +1,71 @@
+/*
+ * Brand layer over nextra-theme-docs.
+ *
+ * The docs are a room in the same house as iminklet.com: paper background,
+ * Newsreader for headings, IBM Plex Mono for anything a machine reads. The
+ * theme's own colour system is configured through <Head color=… /> in the
+ * layout — this file only handles type and the two custom nodes (wordmark,
+ * footer) that Nextra hands over verbatim.
+ */
+
+body {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Headings inside the article, not the chrome around it. */
+article h1,
+article h2,
+article h3,
+article h4 {
+  font-family: var(--font-newsreader), ui-serif, Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+article h1 {
+  font-weight: 300;
+}
+
+.inklet-wordmark {
+  font-family: var(--font-newsreader), ui-serif, Georgia, serif;
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+.inklet-wordmark-sub {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  vertical-align: 0.15em;
+}
+
+.inklet-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.inklet-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.inklet-footer-links a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -1,0 +1,93 @@
+---
+title: Pushing content
+description: The three push workflows in the inklet SDK — Auto, Manual, and Hardcode — and what each one decides for you.
+---
+
+import { Callout, Cards } from "nextra/components";
+
+# Pushing content
+
+`inklet.push.*` is the high-level entry point. Each method takes assets,
+creates a Content, uploads any binaries, retries a failed upload once, confirms
+the Content, and hands back the result.
+
+The three methods differ only in **how much of the decision you keep**.
+
+| | Chooses the display | Lays out the content | Assets |
+| --- | --- | --- | --- |
+| [`push.auto`](/push/auto) | Inklet | Inklet | 1–50, any type |
+| [`push.manual`](/push/manual) | You | Inklet | 1–50, any type |
+| [`push.hardcode`](/push/hardcode) | You | You | exactly 1 PNG or JPEG |
+
+## Shared options
+
+Every push accepts:
+
+| Option | Type | Notes |
+| --- | --- | --- |
+| `assets` | `InkletAsset[]` | At least one. Build them with `inklet.assets.*`. |
+| `title` | `string` | Optional label, shown in the dashboard. |
+| `intent` | `string` | Optional sentence of direction for the layout. |
+| `idempotencyKey` | `string` | Optional. Generated if omitted, and always returned. |
+
+`push.manual` and `push.hardcode` additionally require `displayId`.
+
+## Shared result
+
+All three return the same shape:
+
+```ts
+interface PushResult {
+  contentId: string;
+  state: "pending" | "processing" | "ready" | "failed";
+  presentationIds: readonly string[];
+  idempotencyKey: string;
+  content: Content;
+}
+```
+
+<Callout type="warning">
+  `presentationIds` is commonly **empty** on return, and `state` is commonly
+  `processing`. That is success, not failure — rendering happens after the call.
+  See [Lifecycle](/lifecycle).
+</Callout>
+
+## What `intent` is for
+
+`intent` is a sentence of direction, not a template and not a prompt for prose.
+It steers how Inklet arranges what you sent:
+
+```ts
+intent: "Make the key update easy to scan"
+intent: "Lead with the number, keep the chart secondary"
+intent: "This is a reference sheet — density over drama"
+```
+
+It is optional. Without it, Inklet infers a layout from the assets themselves.
+
+## Assets
+
+Build assets through `inklet.assets.*` so they are validated in your process,
+before a request is made:
+
+```ts
+inklet.assets.text("Milk, eggs, coffee");
+inklet.assets.link("https://example.com/report");
+inklet.assets.image({ data, filename: "chart.png", contentType: "image/png" });
+inklet.assets.file({ data, filename: "menu.pdf", contentType: "application/pdf" });
+```
+
+Limits: **10 MiB** per binary asset, **50** assets per Content. See
+[Assets](/api/assets) for accepted content types.
+
+<Cards>
+  <Cards.Card title="Auto" href="/push/auto" arrow>
+    Let Inklet pick the room.
+  </Cards.Card>
+  <Cards.Card title="Manual" href="/push/manual" arrow>
+    Name the display, keep the typesetting.
+  </Cards.Card>
+  <Cards.Card title="Hardcode" href="/push/hardcode" arrow>
+    Send a finished image.
+  </Cards.Card>
+</Cards>

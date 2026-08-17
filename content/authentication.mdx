@@ -1,0 +1,128 @@
+---
+title: Authentication
+description: How the inklet SDK authenticates with a personal access token, why it is server-only, and how to point it at a Compute Hub instead of the cloud.
+---
+
+import { Callout } from "nextra/components";
+
+# Authentication
+
+The SDK authenticates with a **personal access token** (PAT), sent as a bearer
+token on every request to Inklet.
+
+```ts
+import { Inklet } from "@inklethq/sdk";
+
+const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
+```
+
+`secretKey` is accepted as a compatibility alias from the first alpha. Pass one
+or the other, never both — supplying both throws a `ConfigurationError`.
+
+## Server-only, and enforced
+
+Constructing the client in an environment that has a `window.document` throws
+a `BrowserEnvironmentError` before any request is made:
+
+```text
+Inklet personal access tokens can only be used in trusted server environments.
+Move this request to a server, serverless function, or controlled local service.
+```
+
+<Callout type="warning">
+  This is a guard, not a guarantee. It stops an accidental import from leaking
+  a token into a client bundle; it does not make a token safe to ship. Treat a
+  PAT the way you would treat a database password.
+</Callout>
+
+The check runs again on every request and upload, so a client that somehow
+crossed into a browser still cannot send anything.
+
+## What the token is sent to — and what it is not
+
+| Destination | Token attached |
+| --- | --- |
+| Inklet API endpoints (`/api/sdk/v1/…`) | Yes |
+| Temporary asset storage URLs | **No** |
+
+Binary assets are uploaded directly to short-lived presigned URLs. Those
+uploads carry the storage ticket's own fields, never your PAT.
+
+Two further protections apply to every authenticated request:
+
+- Request paths must be relative to the configured service address. An absolute
+  URL or a path pointing at another origin throws rather than being sent.
+- Redirects are refused outright (`redirect: "error"`), so a cross-origin
+  redirect cannot walk your token somewhere else.
+
+If an error message from the backend happens to contain your token, the SDK
+replaces it with `[REDACTED]` before the error reaches you.
+
+## Service address
+
+The default service address is:
+
+```ts
+import { DEFAULT_INKLET_BASE_URL } from "@inklethq/sdk";
+// "https://dev.iminklet.com"
+```
+
+<Callout>
+  The SDK is in developer preview and points at the preview host by default.
+  Pin `baseUrl` explicitly if you need to be certain which service a deployment
+  is talking to.
+</Callout>
+
+### Pointing at a Compute Hub
+
+The same code runs against a local Compute Hub — nothing leaves your network:
+
+```ts
+const inklet = new Inklet({
+  pat: process.env.INKLET_PAT!,
+  baseUrl: "http://inklet-hub.local:8080",
+});
+```
+
+`baseUrl` must be an absolute HTTP or HTTPS URL with no credentials, query, or
+fragment. Anything else throws a `ConfigurationError` at construction.
+
+## Custom fetch
+
+For controlled runtimes, proxies, or tests, supply your own `fetch`:
+
+```ts
+const inklet = new Inklet({
+  pat: process.env.INKLET_PAT!,
+  fetch: myInstrumentedFetch,
+});
+```
+
+It must match the standard `fetch` signature. If the runtime has no global
+`fetch` and none is supplied, construction throws.
+
+## When a token goes bad
+
+| Error | Meaning | What to do |
+| --- | --- | --- |
+| `AuthenticationFailedError` | The backend rejected the token | Check that it is valid and active |
+| `InvalidSecretKeyError` | 401 with no more specific code | Same — verify the token |
+| `RevokedSecretKeyError` | The token was revoked | Issue a new token and redeploy |
+| `PermissionDeniedError` | Valid token, insufficient scope | Check what the token is scoped to |
+
+All four extend `InkletError`; the first three also extend
+`AuthenticationError`, so you can catch the whole class at once:
+
+```ts
+import { AuthenticationError } from "@inklethq/sdk";
+
+try {
+  await inklet.displays.list();
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    // Rotate the token, alert an operator, stop retrying.
+  }
+}
+```
+
+See [Errors](/errors) for the full hierarchy.

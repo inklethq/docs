@@ -1,0 +1,164 @@
+---
+title: Errors
+description: The inklet SDK error hierarchy — every class, its code, and what to do when you catch it.
+---
+
+import { Callout } from "nextra/components";
+
+# Errors
+
+Every error the SDK produces extends `InkletError`, which preserves the
+backend's own code, the HTTP status, a request ID, and any structured details.
+
+```ts
+class InkletError extends Error {
+  readonly code: string;
+  readonly status: number | undefined;
+  readonly requestId: string | undefined;
+  readonly details: Readonly<Record<string, unknown>> | undefined;
+
+  toJSON(): Record<string, unknown>;
+}
+```
+
+`toJSON()` makes it safe to log the whole thing:
+
+```ts
+catch (error) {
+  if (error instanceof InkletError) {
+    logger.error({ err: error.toJSON() }, "inklet push failed");
+  }
+}
+```
+
+<Callout>
+  `requestId` can be handed to Inklet support without exposing anything secret.
+  It is the fastest way to have a specific failure looked up.
+</Callout>
+
+## Hierarchy
+
+```text
+Error
+└── InkletError
+    ├── ConfigurationError          invalid_configuration
+    ├── BrowserEnvironmentError     browser_environment
+    ├── AuthenticationError
+    │   ├── AuthenticationFailedError   authentication_failed
+    │   ├── InvalidSecretKeyError       invalid_secret_key
+    │   └── RevokedSecretKeyError       revoked_secret_key
+    ├── PermissionDeniedError       permission_denied
+    ├── NotFoundError               not_found
+    ├── ConflictError               conflict
+    ├── PayloadTooLargeError        payload_too_large
+    ├── RateLimitError              rate_limited
+    ├── AssetUploadError            asset_upload_failed
+    ├── ApiError                    api_error
+    ├── InvalidResponseError        invalid_response
+    └── NetworkError                network_error
+```
+
+## Thrown locally, before any request
+
+| Class | When |
+| --- | --- |
+| `ConfigurationError` | Bad options, bad asset, bad limit, bad idempotency key, a path that would leave the origin |
+| `BrowserEnvironmentError` | A `document` exists — this is not a trusted environment |
+
+These are programming errors. Retrying will not help.
+
+## Returned by the API
+
+| Status | Class | Typical cause |
+| --- | --- | --- |
+| 401 | `AuthenticationFailedError` | Token invalid or inactive |
+| 401 | `RevokedSecretKeyError` | Token revoked |
+| 401 | `InvalidSecretKeyError` | 401 with no more specific code |
+| 403 | `PermissionDeniedError` | Valid token, wrong scope |
+| 404 | `NotFoundError` | Unknown display, content, or presentation |
+| 409 | `ConflictError` | Idempotency key reused with a different payload |
+| 413 | `PayloadTooLargeError` | Request body over the server limit |
+| 429 | `RateLimitError` | Rate limit exceeded |
+| other | `ApiError` | Anything else non-2xx |
+
+## Transport and parsing
+
+| Class | When |
+| --- | --- |
+| `NetworkError` | The service was unreachable, or the connection closed mid-response |
+| `InvalidResponseError` | A 2xx response the SDK could not parse or trust |
+
+`InvalidResponseError` is deliberately strict: the SDK validates the shape of
+every response and refuses to hand you a half-parsed object. If you see it
+consistently, the client and service versions are probably out of step.
+
+## `AssetUploadError`
+
+Thrown when binary assets still could not be uploaded after the SDK refreshed
+their tickets and retried:
+
+```ts
+class AssetUploadError extends InkletError {
+  readonly contentId: string | undefined;
+  readonly failedAssetIndexes: readonly number[];
+}
+```
+
+```ts
+import { AssetUploadError } from "@inklethq/sdk";
+
+try {
+  await inklet.push.manual({ displayId, assets });
+} catch (error) {
+  if (error instanceof AssetUploadError) {
+    for (const index of error.failedAssetIndexes) {
+      console.error("failed to upload:", assets[index]);
+    }
+  }
+}
+```
+
+`failedAssetIndexes` maps back to the array you passed in.
+
+## A practical handler
+
+```ts
+import {
+  AuthenticationError,
+  ConfigurationError,
+  InkletError,
+  NetworkError,
+  RateLimitError,
+} from "@inklethq/sdk";
+
+async function push() {
+  try {
+    return await inklet.push.auto({ assets });
+  } catch (error) {
+    if (error instanceof ConfigurationError) {
+      throw error; // our bug — fail loudly, do not retry
+    }
+
+    if (error instanceof AuthenticationError) {
+      await alertOperator("inklet token needs rotating");
+      throw error;
+    }
+
+    if (error instanceof RateLimitError || error instanceof NetworkError) {
+      return scheduleRetry(); // transient
+    }
+
+    if (error instanceof InkletError) {
+      logger.error({ err: error.toJSON() });
+    }
+
+    throw error;
+  }
+}
+```
+
+## Credential redaction
+
+Before an error reaches you, the SDK replaces any occurrence of your token in
+the message with `[REDACTED]`. Error messages are safe to log — but note this
+covers the *message*, not anything you attach yourself.

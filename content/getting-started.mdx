@@ -1,0 +1,152 @@
+---
+title: Getting started
+description: Install @inklethq/sdk, authenticate with a personal access token, and push your first content to an inklet display.
+---
+
+import { Steps, Callout, Tabs } from "nextra/components";
+
+# Getting started
+
+<Steps>
+
+### Install
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tabs.Tab>
+    ```sh
+    npm install @inklethq/sdk
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```sh
+    pnpm add @inklethq/sdk
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```sh
+    yarn add @inklethq/sdk
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```sh
+    bun add @inklethq/sdk
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+Node.js 20 or newer is required.
+
+### Create a token
+
+Personal access tokens are issued in the Portal dashboard. Keep the token in
+your environment, never in source control:
+
+```sh filename=".env"
+INKLET_PAT=your-token-here
+```
+
+### Initialize the client
+
+```ts
+import { Inklet } from "@inklethq/sdk";
+
+const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
+```
+
+Construction is side-effect free — configuration is validated, but no request
+is made until you call something. CommonJS works too:
+
+```js
+const { Inklet } = require("@inklethq/sdk");
+```
+
+### Find a display
+
+```ts
+const page = await inklet.displays.list({ limit: 20 });
+
+for (const display of page.items) {
+  console.log(display.id, display.name, display.online);
+}
+```
+
+### Push something
+
+```ts
+const result = await inklet.push.auto({
+  title: "Grocery list",
+  assets: [inklet.assets.text("Milk, eggs, coffee")],
+});
+
+console.log(result.contentId, result.state);
+```
+
+### Wait for it to land
+
+The call above returns as soon as Inklet has your assets — usually with
+`state: "processing"` and no Presentation IDs yet. Poll until it settles:
+
+```ts
+let content = await inklet.contents.retrieve(result.contentId);
+
+while (content.state === "processing") {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  content = await inklet.contents.retrieve(content.id);
+}
+
+if (content.state === "failed") {
+  console.error(content.processing.error);
+} else {
+  console.log("presentations:", content.presentationIds);
+}
+```
+
+</Steps>
+
+## A complete example
+
+```ts filename="brief.ts"
+import { Inklet, InkletError } from "@inklethq/sdk";
+import { readFile } from "node:fs/promises";
+
+const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
+
+async function main() {
+  const chart = inklet.assets.image({
+    data: await readFile("chart.png"),
+    filename: "chart.png",
+    contentType: "image/png",
+  });
+
+  const result = await inklet.push.auto({
+    idempotencyKey: `daily-brief-${new Date().toISOString().slice(0, 10)}`,
+    title: "Daily brief",
+    intent: "Lead with the number, keep the chart secondary",
+    assets: [
+      inklet.assets.text("Revenue is up 12% week over week."),
+      chart,
+    ],
+  });
+
+  console.log(`content ${result.contentId} (${result.state})`);
+}
+
+main().catch((error) => {
+  if (error instanceof InkletError) {
+    console.error(error.code, error.status, error.requestId);
+  }
+  process.exitCode = 1;
+});
+```
+
+<Callout>
+  The idempotency key above is derived from the date, so re-running the script
+  on the same day replays the same push rather than creating a second one. See
+  [Idempotency](/lifecycle#idempotency).
+</Callout>
+
+## Next
+
+- [Authentication](/authentication) — tokens, environments, and pointing at a Compute Hub
+- [Pushing content](/push) — the differences between Auto, Manual, and Hardcode
+- [Lifecycle](/lifecycle) — states, stages, and knowing when a frame is real

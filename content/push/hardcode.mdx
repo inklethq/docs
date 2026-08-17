@@ -1,0 +1,85 @@
+---
+title: Hardcode Push
+description: inklet.push.hardcode sends exactly one PNG or JPEG to one display, rendered as supplied and scaled server-side to the panel.
+---
+
+import { Callout } from "nextra/components";
+
+# Hardcode Push
+
+Use Hardcode when you already made the picture. Exactly one PNG or JPEG goes to
+exactly one display, and Inklet renders it as sent — no summarising, no layout.
+
+```ts
+import { readFile } from "node:fs/promises";
+
+const result = await inklet.push.hardcode({
+  displayId: "display_123",
+  image: inklet.assets.image({
+    data: await readFile("poster.jpg"),
+    filename: "poster.jpg",
+    contentType: "image/jpeg",
+  }),
+});
+```
+
+## Signature
+
+```ts
+inklet.push.hardcode(input: HardcodePushInput): Promise<HardcodePushResult>
+
+interface HardcodePushInput {
+  displayId: string;
+  image: ImageAsset;
+  title?: string;
+  intent?: string;
+  idempotencyKey?: string;
+}
+```
+
+Note that `image` is a single asset, not an array — the shape enforces the rule.
+
+## Dimensions are the server's job
+
+Inklet scales the submitted image to the display's output geometry. Your source
+does not have to match the panel:
+
+<Callout>
+  The SDK deliberately does **not** check image dimensions. Send a 2400×1440
+  export to an 800×480 panel and it will be scaled down for you. Matching the
+  panel exactly only matters if you care about pixel-level control of dithering.
+</Callout>
+
+To render at native size anyway, read the geometry off the display first:
+
+```ts
+const display = await inklet.displays.retrieve("display_123");
+const { pixelWidth, pixelHeight, colorMode } = display.capabilities;
+
+console.log(`render at ${pixelWidth}×${pixelHeight}, ${colorMode}`);
+```
+
+## Accepted formats
+
+Only `image/png` and `image/jpeg`. This is narrower than
+[`assets.image()`](/api/assets), which also accepts GIF, WebP, and SVG for the
+Auto and Manual pipelines.
+
+| Input | Result |
+| --- | --- |
+| One PNG or JPEG | Accepted |
+| A GIF, WebP, or SVG | `ConfigurationError` — "Hardcode Push requires one PNG or JPEG image." |
+| A text, link, or file asset | `ConfigurationError` |
+| More than one asset | Not expressible — `image` takes a single asset |
+
+## Errors specific to Hardcode
+
+| Condition | Error |
+| --- | --- |
+| `input` is not an object | `ConfigurationError` — "Hardcode Push requires an input object." |
+| `image` is not an image asset | `ConfigurationError` |
+| `contentType` is not PNG or JPEG | `ConfigurationError` |
+| `displayId` missing or blank | `ConfigurationError` — "Hardcode Push requires displayId." |
+| Image over 10 MiB | `ConfigurationError` |
+
+All of these throw locally, before upload.

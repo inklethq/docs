@@ -1,0 +1,168 @@
+---
+title: Assets
+description: Building and validating inklet assets — text, links, images, and files, with accepted content types and size limits.
+---
+
+import { Callout } from "nextra/components";
+
+# Assets
+
+An asset is one piece of raw input. `inklet.assets.*` builds them and validates
+them **in your process**, so a malformed push fails before it costs a round
+trip.
+
+```ts
+inklet.assets.text("Milk, eggs, coffee");
+inklet.assets.link("https://example.com/report");
+inklet.assets.image({ data, filename: "chart.png", contentType: "image/png" });
+inklet.assets.file({ data, filename: "menu.pdf", contentType: "application/pdf" });
+```
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Bytes per binary asset | 10 MiB (`MAX_ASSET_SIZE_BYTES`) |
+| Assets per Content | 50 (`MAX_ASSETS_PER_CONTENT`) |
+| Minimum | At least one asset, and binaries cannot be empty |
+
+## `text()`
+
+```ts
+text(text: string): TextAsset
+```
+
+Must contain at least one non-whitespace character. Empty or whitespace-only
+text throws `ConfigurationError`.
+
+## `link()`
+
+```ts
+link(url: string): LinkAsset
+```
+
+Must be an absolute HTTP or HTTPS URL with no embedded credentials. The URL is
+normalized (trimmed and re-serialized) before being stored on the asset.
+
+Inklet fetches and summarises the link during the `fetching_links` stage — a
+link is a source, not just a citation.
+
+## `image()`
+
+```ts
+image(input: { data: BinaryAssetData; filename: string; contentType: AllowedImageContentType }): ImageAsset
+```
+
+| Accepted `contentType` | Notes |
+| --- | --- |
+| `image/png` | Lossless; the safest default for charts and text |
+| `image/jpeg` | Photographs |
+| `image/gif` | First frame is used |
+| `image/webp` | Both lossy and lossless |
+| `image/svg+xml` | Rasterised server-side |
+
+<Callout>
+  [Hardcode Push](/push/hardcode) is narrower — it accepts only PNG and JPEG,
+  since it renders your image directly to the panel.
+</Callout>
+
+## `file()`
+
+```ts
+file(input: { data: BinaryAssetData; filename: string; contentType: AllowedFileContentType }): FileAsset
+```
+
+| Accepted `contentType` | Notes |
+| --- | --- |
+| `application/pdf` | Multi-page documents |
+| `text/plain` | Plain text files |
+| `text/markdown` | Structure is understood, not shown as source |
+| `application/json` | Summarised as data, not printed raw |
+
+## Binary data
+
+```ts
+type BinaryAssetData = Blob | ArrayBuffer | ArrayBufferView;
+```
+
+So all of these work:
+
+```ts
+import { readFile } from "node:fs/promises";
+
+// Buffer (a Uint8Array, so an ArrayBufferView)
+inklet.assets.image({
+  data: await readFile("chart.png"),
+  filename: "chart.png",
+  contentType: "image/png",
+});
+
+// Blob
+inklet.assets.file({
+  data: new Blob([json], { type: "application/json" }),
+  filename: "data.json",
+  contentType: "application/json",
+});
+
+// ArrayBuffer
+inklet.assets.image({
+  data: await (await fetch(url)).arrayBuffer(),
+  filename: "remote.png",
+  contentType: "image/png",
+});
+```
+
+<Callout type="warning">
+  If you pass a `Blob` that already has a `type`, it must match the declared
+  `contentType`. A mismatch throws — this catches a JPEG mislabelled as a PNG
+  before the render worker has to deal with it.
+</Callout>
+
+## Types
+
+```ts
+interface TextAsset { type: "text"; text: string }
+interface LinkAsset { type: "link"; url: string }
+
+interface ImageAsset {
+  type: "image";
+  data: BinaryAssetData;
+  filename: string;
+  contentType: AllowedImageContentType;
+}
+
+interface FileAsset {
+  type: "file";
+  data: BinaryAssetData;
+  filename: string;
+  contentType: AllowedFileContentType;
+}
+
+type InkletAsset = TextAsset | LinkAsset | ImageAsset | FileAsset;
+```
+
+The content-type unions are exported, so you can narrow against them:
+
+```ts
+import {
+  ALLOWED_IMAGE_CONTENT_TYPES,
+  ALLOWED_FILE_CONTENT_TYPES,
+  type AllowedImageContentType,
+} from "@inklethq/sdk";
+
+function isSupportedImage(type: string): type is AllowedImageContentType {
+  return (ALLOWED_IMAGE_CONTENT_TYPES as readonly string[]).includes(type);
+}
+```
+
+## Validation errors
+
+Every failure below is a `ConfigurationError` thrown locally, before a request:
+
+- Empty or whitespace-only text
+- A link that is not absolute HTTP(S), or carries credentials
+- A missing or blank `filename`
+- A `contentType` outside the allowed list for that asset kind
+- A `Blob` whose own type contradicts the declared `contentType`
+- Zero bytes, or more than 10 MiB
+- Data that is not a `Blob`, `ArrayBuffer`, or `ArrayBufferView`

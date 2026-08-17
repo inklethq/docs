@@ -1,0 +1,118 @@
+---
+title: Presentations
+description: The Presentation resource — a rendered frame for one display, available as PNG, RAW2, or RAW4.
+---
+
+import { Callout } from "nextra/components";
+
+# Presentations
+
+A Presentation is one rendered frame for one display. A single Content can
+produce several — one per display it routed to.
+
+## `retrieve()`
+
+```ts
+const presentation = await inklet.presentations.retrieve("presentation_123", {
+  format: "png",
+});
+```
+
+```ts
+retrieve(
+  presentationId: string,
+  options?: { format?: "png" | "raw2" | "raw4" },
+): Promise<Presentation>
+```
+
+Omitting `format` returns the Presentation without asking for a particular
+rendition. A format other than the three throws `ConfigurationError`.
+
+## Formats
+
+| Format | What it is |
+| --- | --- |
+| `png` | Standard image. Use this for previews, dashboards, and debugging. |
+| `raw2` | 2-bit packed buffer for the panel. |
+| `raw4` | 4-bit packed buffer, for panels with more levels. |
+
+Check `display.capabilities.supportedOutputFormats` before requesting a raw
+format — not every panel produces every one.
+
+## The `Presentation` type
+
+```ts
+interface Presentation {
+  id: string;
+  displayId: string;
+  contentIds: readonly string[];
+  mode: "auto" | "manual" | "hardcode" | "";
+  state: "preparing" | "queued" | "published" | "confirmed" | "expired" | "failed";
+  image: PresentationImage | null;
+  failure: PresentationProblem | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+```ts
+interface PresentationImage {
+  url: string;
+  format: "png" | "raw2" | "raw4";
+  width: number;
+  height: number;
+  expiresAt: string;
+  updatedAt: string;
+}
+```
+
+<Callout type="warning">
+  `image.url` is temporary — `expiresAt` says when it stops working. Download
+  the bytes if you need to keep them; do not store the URL.
+</Callout>
+
+`image` is `null` while the Presentation is still `preparing`. See
+[Lifecycle](/lifecycle#presentation-states) for the state machine.
+
+## Failures
+
+```ts
+interface PresentationProblem {
+  code: string;
+  message: string;
+  stage: string | null;
+  retryable: boolean;
+  assetIndex: number | null;
+}
+```
+
+`retryable` tells you whether pushing the same content again is worth trying.
+`assetIndex` points at the specific asset that caused it, when one did.
+
+```ts
+if (presentation.state === "failed" && presentation.failure) {
+  const { code, message, retryable, assetIndex } = presentation.failure;
+
+  console.error(`${code}: ${message}`);
+  if (assetIndex !== null) console.error(`asset ${assetIndex} is at fault`);
+  if (retryable) await retryLater();
+}
+```
+
+The same shape appears in `content.processing.error` and
+`content.processing.warnings`.
+
+## Downloading a frame
+
+```ts
+const presentation = await inklet.presentations.retrieve(id, { format: "png" });
+
+if (presentation.image) {
+  const response = await fetch(presentation.image.url);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await writeFile(`${presentation.id}.png`, bytes);
+}
+```
+
+This is a plain `fetch` — image URLs are pre-authorized and take no Inklet
+credentials.

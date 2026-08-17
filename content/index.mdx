@@ -1,0 +1,89 @@
+---
+title: Introduction
+description: The server-side TypeScript SDK for inklet e-ink displays — push text, links, images, and PDFs, and let Inklet handle layout, routing, and rendering.
+---
+
+import { Cards, Callout } from "nextra/components";
+
+# inklet Portal SDK
+
+`@inklethq/sdk` is the server-side client for inklet displays. You hand it
+something worth showing — a sentence, a link, a chart, a PDF — and Inklet
+summarises it, decides which panel should carry it, lays it out, and renders
+it for e-ink.
+
+```ts
+import { Inklet } from "@inklethq/sdk";
+
+const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
+
+await inklet.push.auto({
+  title: "Daily brief",
+  intent: "Make the key update easy to scan",
+  assets: [
+    inklet.assets.text("Revenue is up 12% week over week."),
+    inklet.assets.link("https://example.com/report"),
+  ],
+});
+```
+
+<Callout type="warning">
+  A personal access token is a server credential. The SDK refuses to construct
+  a client in any environment with a `document`, so a token cannot reach a
+  browser bundle by accident. See [Authentication](/authentication).
+</Callout>
+
+## The four nouns
+
+Everything in the API is one of these.
+
+| Noun | What it is |
+| --- | --- |
+| **Display** | A physical panel bound to your account. It reports battery, firmware, tags, and the geometry and formats it can render. |
+| **Asset** | One piece of raw input: text, a link, an image, or a file. Assets are validated locally before anything is sent. |
+| **Content** | A submission — a set of assets plus your intent. It moves through `pending → processing → ready`. |
+| **Presentation** | A rendered frame for one Display, in one format (`png`, `raw2`, `raw4`). One Content can produce several. |
+
+The shape of a normal day: you create a **Content** out of **Assets**, Inklet
+turns it into one or more **Presentations**, and a **Display** picks one up
+the next time it wakes.
+
+## Three ways to push
+
+<Cards>
+  <Cards.Card title="Auto" href="/push/auto" arrow>
+    Inklet chooses the displays and the layout.
+  </Cards.Card>
+  <Cards.Card title="Manual" href="/push/manual" arrow>
+    You choose the display; Inklet still sets the type.
+  </Cards.Card>
+  <Cards.Card title="Hardcode" href="/push/hardcode" arrow>
+    You supply the finished image.
+  </Cards.Card>
+</Cards>
+
+## Requirements
+
+- Node.js 20 or newer — the SDK uses the global `fetch`, `Blob`, and `FormData`
+- A trusted server environment
+- A personal access token from the Portal dashboard
+
+ESM and CommonJS builds ship together, and TypeScript declarations are
+included; you do not need a `@types` package.
+
+## Where to go next
+
+<Cards>
+  <Cards.Card title="Getting started" href="/getting-started" arrow>
+    Install, authenticate, and land your first push.
+  </Cards.Card>
+  <Cards.Card title="Lifecycle" href="/lifecycle" arrow>
+    Why a successful push is not yet a rendered frame.
+  </Cards.Card>
+  <Cards.Card title="API reference" href="/api/client" arrow>
+    Every resource, option, and return type.
+  </Cards.Card>
+  <Cards.Card title="Errors" href="/errors" arrow>
+    The error classes and what to do about each.
+  </Cards.Card>
+</Cards>
