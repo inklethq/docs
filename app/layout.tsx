@@ -36,6 +36,13 @@ export const metadata: Metadata = {
     "Documentation for @inklethq/sdk — the server-side TypeScript client for inklet e-ink displays.",
   applicationName: "inklet SDK Docs",
   appleWebApp: { title: "inklet SDK Docs" },
+  // Declared here so /favicon.ico never falls through to the MDX catch-all.
+  icons: {
+    icon: [
+      { url: "/logo_light.png", media: "(prefers-color-scheme: light)" },
+      { url: "/logo_dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 const navbar = (
@@ -46,7 +53,7 @@ const navbar = (
       </span>
     }
     logoLink="https://iminklet.com"
-    projectLink="https://github.com/Inklet-2026/sdk"
+    projectLink="https://github.com/inklethq/sdk"
   />
 );
 
@@ -91,6 +98,11 @@ export default async function RootLayout({
           navbar={navbar}
           footer={footer}
           pageMap={await getPageMap()}
+          docsRepositoryBase="https://github.com/inklethq/sdk"
+          editLink={null}
+          feedback={{ content: null }}
+          sidebar={{ defaultMenuCollapseLevel: 1, toggleButton: true }}
+          toc={{ backToTop: "Back to top" }}
         >
           {children}
         </Layout>

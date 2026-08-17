@@ -12,11 +12,11 @@ export default {
     type: "separator",
   },
   overview: {
-    title: "SDK overview ↗",
+    title: "SDK overview",
     href: "https://iminklet.com/developers",
   },
   npm: {
-    title: "npm ↗",
+    title: "npm",
     href: "https://www.npmjs.com/package/@inklethq/sdk",
   },
 } satisfies MetaRecord;

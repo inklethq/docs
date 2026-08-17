@@ -125,9 +125,9 @@ async function waitForContent(contentId: string, timeoutMs = 60_000) {
 
 <Callout>
   A display shows a frame when it next wakes, which depends on its
-  `syncIntervalMinutes`. `confirmed` can therefore be minutes away even when
-  everything succeeded immediately. Read `display.nextSyncAt` to know when to
-  expect it.
+  `syncIntervalMinutes` — so a confirmed state can be minutes away even when
+  everything else succeeded immediately. Read `display.nextSyncAt` to know when
+  to expect it.
 </Callout>
 
 ## Idempotency

@@ -33,6 +33,16 @@ article h1 {
   font-weight: 300;
 }
 
+/*
+ * Headless UI marks a button as focused after a mouse click, not just after a
+ * Tab, so the theme's 2px ring lingers on "Copy page" once you have used it.
+ * :focus-visible is the thing that actually tells the two apart — dropping the
+ * ring only when it does not match keeps the keyboard affordance intact.
+ */
+.x\:nextra-focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
 .inklet-wordmark {
   font-family: var(--font-newsreader), ui-serif, Georgia, serif;
   font-size: 1.25rem;
