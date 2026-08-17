@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
     "start": "next start"
   },
   "dependencies": {
@@ -17,6 +18,12 @@
   "devDependencies": {
     "@types/mdx": "^2.0.14",
     "@types/node": "26.2.0",
-    "@types/react": "19.2.18"
+    "@types/react": "19.2.18",
+    "pagefind": "^1.4.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "~4.3.5"
+    }
   }
 }
