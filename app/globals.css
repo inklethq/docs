@@ -52,6 +52,9 @@ html > body[data-scroll-locked] {
 
 body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background-image:
     radial-gradient(circle at 15% 0%, rgb(255 255 255 / 34%), transparent 30rem),
     linear-gradient(rgb(84 78 68 / 2%) 1px, transparent 1px);
@@ -69,17 +72,29 @@ samp {
 .prose h2,
 .prose h3,
 .prose h4,
+h1[class~="text-[1.75em]"],
 [data-docs-title] {
   font-family: var(--font-newsreader), ui-serif, Georgia, serif;
+  letter-spacing: normal;
+}
+
+.prose h1,
+.prose h2,
+h1[class~="text-[1.75em]"],
+[data-docs-title] {
+  font-weight: 300;
+}
+
+.prose h3,
+.prose h4 {
   font-weight: 400;
-  letter-spacing: 0.01em;
 }
 
 .inklet-wordmark {
   font-family: var(--font-newsreader), ui-serif, Georgia, serif;
   font-size: 1.3rem;
   font-weight: 400;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.025em;
 }
 
 .inklet-wordmark-sub {
