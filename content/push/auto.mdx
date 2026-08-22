@@ -1,16 +1,16 @@
 ---
 title: Auto Push
-description: inklet.push.auto lets Inklet choose which compatible displays receive the content and how it is laid out.
+description: inklet.push.auto lets inklet choose which compatible displays receive the content and how it is laid out.
 ---
 
 
 <Callout type="warn">
-  Auto uses Inklet AI and requires an active Pro subscription. A Free account
-  receives `SubscriptionRequiredError`; manage the plan in the Inklet portal.
+  Auto uses inklet AI and requires an active Pro subscription. A Free account
+  receives `SubscriptionRequiredError`; manage the plan in the inklet portal.
 </Callout>
 
 Use Auto when you have something worth showing and no strong opinion about
-where it goes. Inklet reads the assets, picks the compatible displays, and
+where it goes. inklet reads the assets, picks the compatible displays, and
 handles the layout.
 
 ```ts
@@ -39,7 +39,7 @@ defined by not naming a target.
 
 ## Which displays receive it
 
-Inklet decides, based on the assets, your account's displays, and their
+inklet decides, based on the assets, your account's displays, and their
 declared capabilities. A Content can produce several Presentations — one per
 display it routed to — which is why `presentationIds` is an array.
 
@@ -72,5 +72,5 @@ for (const id of content.presentationIds) {
 | The PAT owner is on Free | `SubscriptionRequiredError` — upgrade to Pro, then retry with the same PAT |
 
 The validation errors throw locally, before a request is sent. Subscription
-authorization is enforced by the Inklet service before it creates a Content or
+authorization is enforced by the inklet service before it creates a Content or
 any upload tickets.

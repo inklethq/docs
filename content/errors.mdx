@@ -29,7 +29,7 @@ catch (error) {
 ```
 
 <Callout>
-  `requestId` can be handed to Inklet support without exposing anything secret.
+  `requestId` can be handed to inklet support without exposing anything secret.
   It is the fastest way to have a specific failure looked up.
 </Callout>
 
@@ -145,7 +145,7 @@ async function push() {
     }
 
     if (error instanceof SubscriptionRequiredError) {
-      await alertOperator("upgrade or manage the Inklet subscription");
+      await alertOperator("upgrade or manage the inklet subscription");
       throw error; // not transient; keep the same PAT after the plan changes
     }
 

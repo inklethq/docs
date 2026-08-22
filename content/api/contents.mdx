@@ -118,7 +118,7 @@ throws `ConfigurationError`. Returns the same shape as `create()`.
 
 <SdkType file="contents" name="ContentProcessing" />
 
-`warnings` is worth logging even on success — it is where Inklet reports things
+`warnings` is worth logging even on success — it is where inklet reports things
 like a link it could not fetch, or a display it skipped.
 
 ## Doing it by hand
@@ -158,7 +158,7 @@ const content = await inklet.contents.confirm(created.content.id);
 ```
 
 <Callout>
-  Note the upload `fetch` above carries no Inklet credentials — that is
+  Note the upload `fetch` above carries no inklet credentials — that is
   deliberate, and `push.*` does the same. Never attach your PAT to a storage
   URL.
 </Callout>

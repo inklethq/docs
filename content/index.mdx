@@ -1,11 +1,11 @@
 ---
 title: Introduction
-description: The server-side TypeScript SDK for inklet e-ink displays — push text, links, images, and PDFs, and let Inklet handle layout, routing, and rendering.
+description: The server-side TypeScript SDK for inklet e-ink displays — push text, links, images, and PDFs, and let inklet handle layout, routing, and rendering.
 ---
 
 
 `@inklethq/sdk` is the server-side client for inklet displays. You hand it
-something worth showing — a sentence, a link, a chart, a PDF — and Inklet
+something worth showing — a sentence, a link, a chart, a PDF — and inklet
 summarises it, decides which panel should carry it, lays it out, and renders
 it for e-ink.
 
@@ -41,7 +41,7 @@ Everything in the API is one of these.
 | **Content** | A submission — a set of assets plus your intent. It moves through `pending → processing → ready`. |
 | **Presentation** | A rendered frame for one Display, in one format (`png`, `raw2`, `raw4`). One Content can produce several. |
 
-The shape of a normal day: you create a **Content** out of **Assets**, Inklet
+The shape of a normal day: you create a **Content** out of **Assets**, inklet
 turns it into one or more **Presentations**, and a **Display** picks one up
 the next time it wakes.
 
@@ -49,10 +49,10 @@ the next time it wakes.
 
 <Cards>
   <Card title="Auto" href="/push/auto">
-    Inklet chooses the displays and the layout.
+    inklet chooses the displays and the layout.
   </Card>
   <Card title="Manual" href="/push/manual">
-    You choose the display; Inklet still sets the type.
+    You choose the display; inklet still sets the type.
   </Card>
   <Card title="Hardcode" href="/push/hardcode">
     You supply the finished image.

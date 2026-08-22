@@ -1,7 +1,7 @@
 openapi: 3.1.0
 
 info:
-  title: Inklet SDK HTTP API
+  title: inklet SDK HTTP API
   version: 0.1.0
   description: |
     The public HTTP contract used by `@inklethq/sdk`.
@@ -13,7 +13,7 @@ info:
 
 servers:
   - url: https://dev.iminklet.com
-    description: Inklet Cloud
+    description: inklet Cloud
 
 security:
   - bearerAuth: []
@@ -190,7 +190,7 @@ paths:
       summary: Create content
       description: |
         Creates one submission and returns presigned upload tickets for binary
-        assets. `auto` and `manual` use Inklet AI and require Pro. `hardcode`
+        assets. `auto` and `manual` use inklet AI and require Pro. `hardcode`
         accepts one PNG or JPEG and is available on Free and Pro.
       x-codeSamples:
         - id: sdk-create-content
@@ -365,8 +365,8 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: Inklet PAT
-      description: A personal access token created in the Inklet portal. Server-side use only.
+      bearerFormat: inklet PAT
+      description: A personal access token created in the inklet portal. Server-side use only.
 
   parameters:
     Cursor:
@@ -422,7 +422,7 @@ components:
             subscriptionRequired:
               value:
                 code: subscription_required
-                message: This Inklet feature requires an active Pro subscription.
+                message: This inklet feature requires an active Pro subscription.
                 requestId: req_123
                 details: null
     NotFound:
@@ -749,7 +749,7 @@ components:
         mode: { const: auto }
         displayId:
           type: "null"
-          description: Omit this field or send null; Inklet chooses the display.
+          description: Omit this field or send null; inklet chooses the display.
         intent: { type: [string, "null"] }
         title: { type: [string, "null"] }
         assets:

@@ -9,12 +9,12 @@ creates a Content, uploads any binaries, retries a failed upload once, confirms
 the Content, and hands back the result.
 
 The three methods differ in **how much of the decision you keep** and whether
-Inklet AI processes the assets.
+inklet AI processes the assets.
 
 | | Chooses the display | Lays out the content | Plan | Assets |
 | --- | --- | --- | --- | --- |
-| [`push.auto`](/push/auto) | Inklet | Inklet AI | Pro | 1–50, any type |
-| [`push.manual`](/push/manual) | You | Inklet AI | Pro | 1–50, any type |
+| [`push.auto`](/push/auto) | inklet | inklet AI | Pro | 1–50, any type |
+| [`push.manual`](/push/manual) | You | inklet AI | Pro | 1–50, any type |
 | [`push.hardcode`](/push/hardcode) | You | You | Free or Pro | exactly 1 PNG or JPEG |
 
 See [Plans and AI features](/plans) for authorization behavior and upgrade
@@ -48,7 +48,7 @@ All three return the same shape:
 ## What `intent` is for
 
 `intent` is a sentence of direction, not a template and not a prompt for prose.
-It steers how Inklet arranges what you sent:
+It steers how inklet arranges what you sent:
 
 ```ts
 intent: "Make the key update easy to scan"
@@ -56,7 +56,7 @@ intent: "Lead with the number, keep the chart secondary"
 intent: "This is a reference sheet — density over drama"
 ```
 
-It is optional. Without it, Inklet infers a layout from the assets themselves.
+It is optional. Without it, inklet infers a layout from the assets themselves.
 
 ## Assets
 
@@ -75,7 +75,7 @@ Limits: **10 MiB** per binary asset, **50** assets per Content. See
 
 <Cards>
   <Card title="Auto" href="/push/auto">
-    Let Inklet pick the room.
+    Let inklet pick the room.
   </Card>
   <Card title="Manual" href="/push/manual">
     Name the display, keep the typesetting.

@@ -4,11 +4,11 @@ description: Which inklet SDK features use AI, which plan they require, and how 
 ---
 
 
-Inklet authorizes every SDK request against the current plan of the user who
+inklet authorizes every SDK request against the current plan of the user who
 owns the personal access token. A valid PAT proves who the caller is; the plan
 decides which processing features that user can run.
 
-| SDK capability | Free | Pro | Uses Inklet AI |
+| SDK capability | Free | Pro | Uses inklet AI |
 | --- | --- | --- | --- |
 | Read Displays, Contents, Presentations, queues, and current frames | Yes | Yes | No |
 | Hardcode Push | Yes | Yes | No |
@@ -16,7 +16,7 @@ decides which processing features that user can run.
 | Manual Push | No | Yes | Yes |
 
 Manual Push still requires Pro. Choosing the Display yourself skips automatic
-routing, but Inklet still fetches, understands, summarizes, and lays out the
+routing, but inklet still fetches, understands, summarizes, and lays out the
 assets. Hardcode Push receives a finished PNG or JPEG and only scales it to the
 Display output size, so it remains available on Free.
 
@@ -45,7 +45,7 @@ diagnostic context rather than UI copy.
 
 <Callout>
   Upgrade or manage the subscription in the
-  [Inklet portal](https://portal.iminklet.com/subscription). The SDK does not
+  [inklet portal](https://portal.iminklet.com/subscription). The SDK does not
   create checkout sessions, open the billing portal, list invoices, or expose
   payment-provider identifiers.
 </Callout>
@@ -56,6 +56,6 @@ You do not need to issue a new PAT. Authorization uses the token owner's
 current server-side plan on each request, so retry the operation with the same
 client after the plan change is active.
 
-The plan check is enforced by the Inklet service for both `inklet.push.*` and
+The plan check is enforced by the inklet service for both `inklet.push.*` and
 the lower-level Content endpoints. Calling `contents.create()` directly does
 not bypass it.

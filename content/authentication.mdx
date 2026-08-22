@@ -5,7 +5,7 @@ description: How the inklet SDK authenticates with a personal access token, why 
 
 
 The SDK authenticates with a **personal access token** (PAT), sent as a bearer
-token on every request to Inklet.
+token on every request to inklet.
 
 ```ts
 import { Inklet } from "@inklethq/sdk";
@@ -26,7 +26,7 @@ Constructing the client in an environment that has a `window.document` throws
 a `BrowserEnvironmentError` before any request is made:
 
 ```text
-Inklet personal access tokens can only be used in trusted server environments.
+inklet personal access tokens can only be used in trusted server environments.
 Move this request to a server, serverless function, or controlled local service.
 ```
 
@@ -43,7 +43,7 @@ crossed into a browser still cannot send anything.
 
 | Destination | Token attached |
 | --- | --- |
-| Inklet API endpoints (`/api/sdk/v1/…`) | Yes |
+| inklet API endpoints (`/api/sdk/v1/…`) | Yes |
 | Temporary asset storage URLs | **No** |
 
 Binary assets are uploaded directly to short-lived presigned URLs. Those
@@ -110,7 +110,7 @@ It must match the standard `fetch` signature. If the runtime has no global
 | `InvalidSecretKeyError` | 401 with no more specific code | Same — verify the token |
 | `RevokedSecretKeyError` | The token was revoked | Issue a new token and redeploy |
 | `PermissionDeniedError` | Valid token, insufficient scope | Check what the token is scoped to |
-| `SubscriptionRequiredError` | Valid token, but the feature requires Pro | Manage the subscription in the Inklet portal; keep the same PAT |
+| `SubscriptionRequiredError` | Valid token, but the feature requires Pro | Manage the subscription in the inklet portal; keep the same PAT |
 
 All four extend `InkletError`; the first three also extend
 `AuthenticationError`, so you can catch the whole class at once:
