@@ -1,0 +1,10 @@
+import type { MetadataRoute } from "next";
+import { source } from "@/lib/source";
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  return source.getPages().map((page) => ({
+    url: new URL(page.url, "https://docs.iminklet.com").toString(),
+    changeFrequency: "weekly",
+    priority: page.url === "/" ? 1 : 0.7,
+  }));
+}

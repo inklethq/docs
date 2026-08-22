@@ -3,9 +3,6 @@ title: Contents
 description: The Content resource — the lower-level lifecycle behind inklet.push, including create, confirm, and upload ticket refresh.
 ---
 
-import { Callout } from "nextra/components";
-
-# Contents
 
 A Content is one submission: a set of assets plus your intent. Most
 applications should use [`inklet.push.*`](/push), which drives this resource
@@ -27,14 +24,9 @@ const page = await inklet.contents.list({ mode: "manual", state: "ready" });
 
 ```ts
 list(options?: ListContentsOptions): Promise<ContentPage>
-
-interface ListContentsOptions {
-  state?: "pending" | "processing" | "ready" | "failed";
-  mode?: "auto" | "manual" | "hardcode";
-  cursor?: string;
-  limit?: number; // 1–50
-}
 ```
+
+<SdkType file="contents" name="ListContentsOptions" />
 
 An out-of-range value for `state` or `mode` throws `ConfigurationError`
 locally.
@@ -45,17 +37,9 @@ locally.
 create(input: CreateContentRequest, idempotencyKey: string): Promise<CreateContentResponse>
 ```
 
-```ts
-interface CreateContentRequest {
-  mode: "auto" | "manual" | "hardcode";
-  displayId?: string | null;
-  intent?: string | null;
-  title?: string | null;
-  assets: readonly CreateContentAssetInput[];
-}
-```
+<SdkType file="contents" name="CreateContentRequest" />
 
-<Callout type="warning">
+<Callout type="warn">
   Note the asset shape here differs from [`inklet.assets.*`](/api/assets).
   Binary assets are declared by **metadata only** — `filename`, `contentType`,
   `sizeBytes` — because the bytes go to a presigned URL afterwards, not in this
@@ -72,22 +56,16 @@ type CreateContentAssetInput =
 
 Returns the Content plus one upload ticket per binary asset:
 
-```ts
-interface CreateContentResponse {
-  content: Content;
-  uploadTickets: readonly UploadTicket[];
-}
+<SdkType file="contents" name="CreateContentResponse" />
 
-interface UploadTicket {
-  assetIndex: number;
-  url: string;
-  fields: Readonly<Record<string, string>>;
-  expiresAt: string;
-}
-```
+<SdkType file="contents" name="UploadTicket" />
 
 `idempotencyKey` is required here — 8–128 printable ASCII characters, no
 spaces. It is sent as the `idempotency-key` header.
+
+The service applies the same plan authorization at this lower level: `auto`
+and `manual` require Pro, while `hardcode` is available on Free. Direct use of
+`contents.create()` cannot bypass the AI feature gate.
 
 ### Validation
 
@@ -132,54 +110,13 @@ throws `ConfigurationError`. Returns the same shape as `create()`.
 
 ## The `Content` type
 
-```ts
-interface Content {
-  id: string;
-  mode: "auto" | "manual" | "hardcode";
-  requestedDisplayId: string | null;
-  intent: string | null;
-  title: string | null;
-  state: "pending" | "processing" | "ready" | "failed";
-  assets: readonly ContentAsset[];
-  upload: ContentUpload;
-  processing: ContentProcessing;
-  presentationIds: readonly string[];
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="contents" name="Content" />
 
-```ts
-interface ContentAsset {
-  assetIndex: number;
-  type: "text" | "link" | "image" | "file";
-  text: string | null;
-  url: string | null;
-  filename: string | null;
-  contentType: string | null;
-  sizeBytes: number | null;
-  uploadState: "pending" | "uploaded" | "failed";
-}
+<SdkType file="contents" name="ContentAsset" />
 
-interface ContentUpload {
-  status: "awaiting_upload" | "partial" | "complete";
-  failedAssetIndexes: readonly number[];
-}
+<SdkType file="contents" name="ContentUpload" />
 
-interface ContentProcessing {
-  stage:
-    | "awaiting_upload"
-    | "fetching_links"
-    | "summarizing"
-    | "routing"
-    | "creating_presentations"
-    | "complete"
-    | "failed"
-    | null;
-  warnings: readonly PresentationProblem[];
-  error: PresentationProblem | null;
-}
-```
+<SdkType file="contents" name="ContentProcessing" />
 
 `warnings` is worth logging even on success — it is where Inklet reports things
 like a link it could not fetch, or a display it skipped.

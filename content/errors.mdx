@@ -3,9 +3,6 @@ title: Errors
 description: The inklet SDK error hierarchy — every class, its code, and what to do when you catch it.
 ---
 
-import { Callout } from "nextra/components";
-
-# Errors
 
 Every error the SDK produces extends `InkletError`, which preserves the
 backend's own code, the HTTP status, a request ID, and any structured details.
@@ -48,6 +45,7 @@ Error
     │   ├── InvalidSecretKeyError       invalid_secret_key
     │   └── RevokedSecretKeyError       revoked_secret_key
     ├── PermissionDeniedError       permission_denied
+    │   └── SubscriptionRequiredError   subscription_required
     ├── NotFoundError               not_found
     ├── ConflictError               conflict
     ├── PayloadTooLargeError        payload_too_large
@@ -75,6 +73,7 @@ These are programming errors. Retrying will not help.
 | 401 | `RevokedSecretKeyError` | Token revoked |
 | 401 | `InvalidSecretKeyError` | 401 with no more specific code |
 | 403 | `PermissionDeniedError` | Valid token, wrong scope |
+| 403 | `SubscriptionRequiredError` | Valid token, but the requested AI feature requires Pro |
 | 404 | `NotFoundError` | Unknown display, content, or presentation |
 | 409 | `ConflictError` | Idempotency key reused with a different payload |
 | 413 | `PayloadTooLargeError` | Request body over the server limit |
@@ -129,6 +128,7 @@ import {
   InkletError,
   NetworkError,
   RateLimitError,
+  SubscriptionRequiredError,
 } from "@inklethq/sdk";
 
 async function push() {
@@ -142,6 +142,11 @@ async function push() {
     if (error instanceof AuthenticationError) {
       await alertOperator("inklet token needs rotating");
       throw error;
+    }
+
+    if (error instanceof SubscriptionRequiredError) {
+      await alertOperator("upgrade or manage the Inklet subscription");
+      throw error; // not transient; keep the same PAT after the plan changes
     }
 
     if (error instanceof RateLimitError || error instanceof NetworkError) {

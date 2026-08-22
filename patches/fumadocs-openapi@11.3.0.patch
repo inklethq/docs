@@ -1,0 +1,24 @@
+diff --git a/dist/ui/operation/usage-tabs.js b/dist/ui/operation/usage-tabs.js
+index ce1417dc97361217de67722605786559d6910b09..40c29ab6dc39219b1d68b108609348176e7dbf6a 100644
+--- a/dist/ui/operation/usage-tabs.js
++++ b/dist/ui/operation/usage-tabs.js
+@@ -37,6 +37,7 @@ function UsageTabs({ method, operation, pathItem }) {
+ 				children: /* @__PURE__ */ jsx(UsageTab, {
+ 					id,
+-					lang: item.lang
++					lang: item.lang,
++					codegen: item
+ 				})
+ 			}, id))]
+ 		});
+@@ -104,8 +105,7 @@ function UsageTabsSelector() {
+-function UsageTab({ id, lang }) {
+-	const { mediaAdapters, codeUsages } = useRenderContext();
++function UsageTab({ id, lang, codegen }) {
++	const { mediaAdapters } = useRenderContext();
+ 	const { examples, example: selectedExampleId, route, addListener, removeListener } = useOperationContext();
+ 	const { server } = useServerContext();
+-	const codegen = codeUsages.get(id);
+ 	const [mounted, setMounted] = useState(false);
+ 	const [data, setData] = useState(() => examples.find((example) => example.id === selectedExampleId)?.encoded);
+ 	useEffect(() => {

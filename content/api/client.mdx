@@ -3,9 +3,6 @@ title: Client
 description: Constructing the Inklet client — options, defaults, resources, and the low-level request method.
 ---
 
-import { Callout } from "nextra/components";
-
-# Client
 
 ```ts
 import { Inklet } from "@inklethq/sdk";
@@ -17,14 +14,7 @@ const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
 
 ## Options
 
-```ts
-interface InkletClientOptions {
-  pat?: string;
-  secretKey?: string;
-  baseUrl?: string;
-  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-}
-```
+<SdkType file="client" name="InkletClientOptions" />
 
 | Option | Default | Notes |
 | --- | --- | --- |
@@ -70,13 +60,7 @@ resources do not cover yet:
 const data = await inklet.request<MyType>("/api/sdk/v1/displays");
 ```
 
-```ts
-interface InkletRequestOptions extends Omit<RequestInit, "body" | "headers" | "redirect"> {
-  headers?: HeadersInit;
-  body?: BodyInit | null;
-  json?: unknown;
-}
-```
+<SdkType file="client" name="InkletRequestOptions" />
 
 Pass `json` to send a JSON body — it sets `content-type` and serializes for
 you. Passing both `json` and a non-null `body` throws.
@@ -84,7 +68,7 @@ you. Passing both `json` and a non-null `body` throws.
 Every request automatically carries `authorization: Bearer …` and
 `accept: application/json`, and sets `redirect: "error"`.
 
-<Callout type="warning">
+<Callout type="warn">
   Paths must be relative to `baseUrl`. Absolute URLs, protocol-relative paths
   (`//host`), backslashes, and anything resolving to a different origin throw
   `ConfigurationError` rather than being sent.

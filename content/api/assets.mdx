@@ -3,9 +3,6 @@ title: Assets
 description: Building and validating inklet assets — text, links, images, and files, with accepted content types and size limits.
 ---
 
-import { Callout } from "nextra/components";
-
-# Assets
 
 An asset is one piece of raw input. `inklet.assets.*` builds them and validates
 them **in your process**, so a malformed push fails before it costs a round
@@ -112,7 +109,7 @@ inklet.assets.image({
 });
 ```
 
-<Callout type="warning">
+<Callout type="warn">
   If you pass a `Blob` that already has a `type`, it must match the declared
   `contentType`. A mismatch throws — this catches a JPEG mislabelled as a PNG
   before the render worker has to deal with it.
@@ -120,26 +117,15 @@ inklet.assets.image({
 
 ## Types
 
-```ts
-interface TextAsset { type: "text"; text: string }
-interface LinkAsset { type: "link"; url: string }
+<SdkType file="assets" name="TextAsset" />
 
-interface ImageAsset {
-  type: "image";
-  data: BinaryAssetData;
-  filename: string;
-  contentType: AllowedImageContentType;
-}
+<SdkType file="assets" name="LinkAsset" />
 
-interface FileAsset {
-  type: "file";
-  data: BinaryAssetData;
-  filename: string;
-  contentType: AllowedFileContentType;
-}
+<SdkType file="assets" name="ImageAsset" />
 
-type InkletAsset = TextAsset | LinkAsset | ImageAsset | FileAsset;
-```
+<SdkType file="assets" name="FileAsset" />
+
+`InkletAsset` is the exported union of these four shapes.
 
 The content-type unions are exported, so you can narrow against them:
 

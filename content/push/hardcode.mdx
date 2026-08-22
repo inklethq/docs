@@ -3,9 +3,10 @@ title: Hardcode Push
 description: inklet.push.hardcode sends exactly one PNG or JPEG to one display, rendered as supplied and scaled server-side to the panel.
 ---
 
-import { Callout } from "nextra/components";
 
-# Hardcode Push
+<Callout>
+  Hardcode does not use Inklet AI and is available on both Free and Pro plans.
+</Callout>
 
 Use Hardcode when you already made the picture. Exactly one PNG or JPEG goes to
 exactly one display, and Inklet renders it as sent — no summarising, no layout.
@@ -27,15 +28,9 @@ const result = await inklet.push.hardcode({
 
 ```ts
 inklet.push.hardcode(input: HardcodePushInput): Promise<HardcodePushResult>
-
-interface HardcodePushInput {
-  displayId: string;
-  image: ImageAsset;
-  title?: string;
-  intent?: string;
-  idempotencyKey?: string;
-}
 ```
+
+<SdkType file="push" name="HardcodePushInput" />
 
 Note that `image` is a single asset, not an array — the shape enforces the rule.
 

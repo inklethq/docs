@@ -1,0 +1,14 @@
+{
+  "title": "inklet SDK",
+  "pages": [
+    "index",
+    "getting-started",
+    "authentication",
+    "plans",
+    "push",
+    "lifecycle",
+    "api",
+    "errors",
+    "http"
+  ]
+}

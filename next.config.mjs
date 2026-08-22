@@ -1,11 +1,7 @@
-import nextra from "nextra";
+import { createMDX } from "fumadocs-mdx/next";
 
-const withNextra = nextra({
-  defaultShowCopyCode: true,
-  codeHighlight: true,
-  search: { codeblocks: false },
-});
+const withMDX = createMDX();
 
-export default withNextra({
+export default withMDX({
   reactStrictMode: true,
 });

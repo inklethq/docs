@@ -4,5 +4,5 @@ out
 .env*
 !.env.example
 next-env.d.ts
-public/_pagefind
+*.tsbuildinfo
 .DS_Store

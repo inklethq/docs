@@ -1,0 +1,5 @@
+{
+  "title": "TypeScript SDK",
+  "defaultOpen": true,
+  "pages": ["client", "assets", "contents", "displays", "presentations"]
+}

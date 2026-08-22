@@ -3,35 +3,32 @@ title: Getting started
 description: Install @inklethq/sdk, authenticate with a personal access token, and push your first content to an inklet display.
 ---
 
-import { Steps, Callout, Tabs } from "nextra/components";
 
-# Getting started
-
-<Steps>
+<div className="fd-steps [&_h3]:fd-step">
 
 ### Install
 
 <Tabs items={["npm", "pnpm", "yarn", "bun"]}>
-  <Tabs.Tab>
+  <Tab value="npm">
     ```sh
     npm install @inklethq/sdk
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab value="pnpm">
     ```sh
     pnpm add @inklethq/sdk
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab value="yarn">
     ```sh
     yarn add @inklethq/sdk
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab value="bun">
     ```sh
     bun add @inklethq/sdk
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 Node.js 20 or newer is required.
@@ -72,6 +69,10 @@ for (const display of page.items) {
 
 ### Push something
 
+Auto Push uses Inklet AI and requires Pro. Free accounts can follow the same
+setup with [Hardcode Push](/push/hardcode), which accepts a finished PNG or
+JPEG without AI processing.
+
 ```ts
 const result = await inklet.push.auto({
   title: "Grocery list",
@@ -101,7 +102,7 @@ if (content.state === "failed") {
 }
 ```
 
-</Steps>
+</div>
 
 ## A complete example
 
@@ -148,5 +149,6 @@ main().catch((error) => {
 ## Next
 
 - [Authentication](/authentication) — tokens, environments, and pointing at a Compute Hub
+- [Plans and AI features](/plans) — Free vs. Pro and subscription authorization
 - [Pushing content](/push) — the differences between Auto, Manual, and Hardcode
 - [Lifecycle](/lifecycle) — states, stages, and knowing when a frame is real

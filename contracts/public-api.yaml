@@ -1,0 +1,870 @@
+openapi: 3.1.0
+
+info:
+  title: Inklet SDK HTTP API
+  version: 0.1.0
+  description: |
+    The public HTTP contract used by `@inklethq/sdk`.
+
+    Most applications should use the TypeScript SDK rather than calling these
+    endpoints directly. Personal access tokens are server credentials: never
+    put one in browser code. The interactive browser playground is disabled in
+    the public documentation for that reason.
+
+servers:
+  - url: https://dev.iminklet.com
+    description: Inklet Cloud
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Displays
+    description: Read displays, their delivery queues, and confirmed frames.
+  - name: Contents
+    description: Create submissions and observe their processing lifecycle.
+  - name: Presentations
+    description: Read rendered frames and temporary image URLs.
+
+paths:
+  /api/sdk/v1/displays:
+    get:
+      tags: [Displays]
+      operationId: listDisplays
+      summary: List displays
+      description: Returns the displays bound to the personal access token owner.
+      x-codeSamples:
+        - id: sdk-list-displays
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const page = await inklet.displays.list({ limit: 20 });
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A cursor page of displays.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisplayPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/displays/{displayId}:
+    get:
+      tags: [Displays]
+      operationId: retrieveDisplay
+      summary: Retrieve a display
+      x-codeSamples:
+        - id: sdk-retrieve-display
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const display = await inklet.displays.retrieve("display_123");
+      parameters:
+        - $ref: "#/components/parameters/DisplayId"
+      responses:
+        "200":
+          description: The requested display.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Display"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/displays/{displayId}/queue:
+    get:
+      tags: [Displays]
+      operationId: listDisplayQueue
+      summary: List a display queue
+      description: Returns presentations queued for a display, optionally within a time range.
+      x-codeSamples:
+        - id: sdk-list-display-queue
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const queue = await inklet.displays.listQueue("display_123", {
+              from: "2026-08-01T00:00:00Z",
+              to: new Date(),
+              limit: 20,
+            });
+      parameters:
+        - $ref: "#/components/parameters/DisplayId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: from
+          in: query
+          description: Inclusive lower timestamp bound.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Inclusive upper timestamp bound; must not be earlier than `from`.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: A cursor page of queue items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisplayQueuePage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/displays/{displayId}/current-presentation:
+    get:
+      tags: [Displays]
+      operationId: retrieveCurrentPresentation
+      summary: Retrieve the confirmed presentation
+      description: "Returns `presentation: null` when the display has never confirmed a frame."
+      x-codeSamples:
+        - id: sdk-retrieve-current-presentation
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const presentation = await inklet.displays.current("display_123", {
+              format: "png",
+            });
+      parameters:
+        - $ref: "#/components/parameters/DisplayId"
+        - $ref: "#/components/parameters/Format"
+      responses:
+        "200":
+          description: The confirmed presentation, or null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [presentation]
+                properties:
+                  presentation:
+                    oneOf:
+                      - $ref: "#/components/schemas/Presentation"
+                      - type: "null"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/contents:
+    get:
+      tags: [Contents]
+      operationId: listContents
+      summary: List contents
+      x-codeSamples:
+        - id: sdk-list-contents
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const page = await inklet.contents.list({
+              mode: "manual",
+              state: "ready",
+              limit: 20,
+            });
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/ContentState" }
+        - name: mode
+          in: query
+          schema: { $ref: "#/components/schemas/ContentMode" }
+      responses:
+        "200":
+          description: A cursor page of contents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [Contents]
+      operationId: createContent
+      summary: Create content
+      description: |
+        Creates one submission and returns presigned upload tickets for binary
+        assets. `auto` and `manual` use Inklet AI and require Pro. `hardcode`
+        accepts one PNG or JPEG and is available on Free and Pro.
+      x-codeSamples:
+        - id: sdk-create-content
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const created = await inklet.contents.create(
+              {
+                mode: "manual",
+                displayId: "display_123",
+                title: "Menu",
+                assets: [{ type: "text", text: "Tonight" }],
+              },
+              "menu-2026-08-21",
+            );
+      parameters:
+        - name: idempotency-key
+          in: header
+          required: true
+          description: 8–128 printable ASCII characters without spaces.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+            pattern: "^[!-~]+$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContentRequest"
+      responses:
+        "200":
+          description: Created content and upload tickets for its binary assets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateContentResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/contents/{contentId}:
+    get:
+      tags: [Contents]
+      operationId: retrieveContent
+      summary: Retrieve content
+      x-codeSamples:
+        - id: sdk-retrieve-content
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const content = await inklet.contents.retrieve("content_123");
+      parameters:
+        - $ref: "#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: The requested content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Content"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/contents/{contentId}/confirm:
+    post:
+      tags: [Contents]
+      operationId: confirmContent
+      summary: Confirm uploaded assets
+      description: Closes the upload phase and starts processing when every binary is present.
+      x-codeSamples:
+        - id: sdk-confirm-content
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const content = await inklet.contents.confirm("content_123");
+      parameters:
+        - $ref: "#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: The updated content, including upload status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Content"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/contents/{contentId}/upload-tickets:
+    post:
+      tags: [Contents]
+      operationId: refreshContentUploadTickets
+      summary: Refresh upload tickets
+      description: Issues new presigned upload tickets for selected binary asset indexes.
+      x-codeSamples:
+        - id: sdk-refresh-upload-tickets
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const refreshed = await inklet.contents.refreshUploadTickets(
+              "content_123",
+              [0, 2],
+            );
+      parameters:
+        - $ref: "#/components/parameters/ContentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetIndexes]
+              properties:
+                assetIndexes:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The content and replacement upload tickets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateContentResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/presentations/{presentationId}:
+    get:
+      tags: [Presentations]
+      operationId: retrievePresentation
+      summary: Retrieve a presentation
+      description: Optionally asks for a temporary image URL in a specific output format.
+      x-codeSamples:
+        - id: sdk-retrieve-presentation
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const presentation = await inklet.presentations.retrieve(
+              "presentation_123",
+              { format: "png" },
+            );
+      parameters:
+        - $ref: "#/components/parameters/PresentationId"
+        - $ref: "#/components/parameters/Format"
+      responses:
+        "200":
+          description: The requested presentation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Presentation"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Inklet PAT
+      description: A personal access token created in the Inklet portal. Server-side use only.
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor returned by the previous page.
+      schema: { type: string, minLength: 1 }
+    Limit:
+      name: limit
+      in: query
+      description: Number of items to return.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    DisplayId:
+      name: displayId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ContentId:
+      name: contentId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    PresentationId:
+      name: presentationId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    Format:
+      name: format
+      in: query
+      description: Requested image rendition.
+      schema: { $ref: "#/components/schemas/PresentationImageFormat" }
+
+  responses:
+    BadRequest:
+      description: The request is invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: The PAT is missing, invalid, or revoked.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: |
+        The caller cannot use the resource. AI-backed modes return
+        `subscription_required` when the PAT owner does not have Pro.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            subscriptionRequired:
+              value:
+                code: subscription_required
+                message: This Inklet feature requires an active Pro subscription.
+                requestId: req_123
+                details: null
+    NotFound:
+      description: The requested resource does not exist or is not visible to the caller.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The request conflicts with the current resource or idempotency state.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: An asset or request exceeds the supported limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests. Retry after the server-provided delay.
+      headers:
+        Retry-After:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    ContentMode:
+      type: string
+      enum: [auto, manual, hardcode]
+    ContentState:
+      type: string
+      enum: [pending, processing, ready, failed]
+    ContentUploadStatus:
+      type: string
+      enum: [awaiting_upload, partial, complete]
+    ContentAssetUploadState:
+      type: string
+      enum: [pending, uploaded, failed]
+    ContentProcessingStage:
+      type: [string, "null"]
+      enum:
+        - awaiting_upload
+        - fetching_links
+        - summarizing
+        - routing
+        - creating_presentations
+        - complete
+        - failed
+        - null
+    PresentationState:
+      type: string
+      enum: [preparing, queued, published, confirmed, expired, failed]
+    PresentationImageFormat:
+      type: string
+      enum: [png, raw2, raw4]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        requestId: { type: [string, "null"] }
+        details:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+
+    DisplayCapabilities:
+      type: object
+      required:
+        - pixelWidth
+        - pixelHeight
+        - orientation
+        - colorMode
+        - supportedImageContentTypes
+        - supportedOutputFormats
+      properties:
+        pixelWidth: { type: integer, minimum: 1 }
+        pixelHeight: { type: integer, minimum: 1 }
+        orientation: { type: string }
+        colorMode: { type: string }
+        supportedImageContentTypes:
+          type: array
+          items: { type: string }
+        supportedOutputFormats:
+          type: array
+          items: { $ref: "#/components/schemas/PresentationImageFormat" }
+
+    Display:
+      type: object
+      required:
+        - id
+        - hardwareId
+        - thingName
+        - name
+        - nickname
+        - firmware
+        - batteryPercent
+        - online
+        - lastSeenAt
+        - stateUpdatedAt
+        - boundAt
+        - tags
+        - syncIntervalMinutes
+        - nextSyncAt
+        - currentPresentationId
+        - currentPresentationUpdatedAt
+        - pendingPresentationId
+        - capabilities
+      properties:
+        id: { type: string }
+        hardwareId: { type: string }
+        thingName: { type: string }
+        name: { type: string }
+        nickname: { type: [string, "null"] }
+        firmware: { type: [string, "null"] }
+        batteryPercent: { type: [number, "null"], minimum: 0, maximum: 100 }
+        online: { type: boolean }
+        lastSeenAt: { type: [string, "null"], format: date-time }
+        stateUpdatedAt: { type: [string, "null"], format: date-time }
+        boundAt: { type: [string, "null"], format: date-time }
+        tags:
+          type: array
+          items: { type: string }
+        syncIntervalMinutes: { type: [number, "null"], minimum: 0 }
+        nextSyncAt: { type: [string, "null"], format: date-time }
+        currentPresentationId: { type: [string, "null"] }
+        currentPresentationUpdatedAt: { type: [string, "null"], format: date-time }
+        pendingPresentationId: { type: [string, "null"] }
+        capabilities: { $ref: "#/components/schemas/DisplayCapabilities" }
+
+    DisplayPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Display" }
+
+    DisplayQueueItem:
+      type: object
+      required: [id, displayId, contentIds, mode, state, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        displayId: { type: string }
+        contentIds:
+          type: array
+          items: { type: string }
+        mode:
+          type: string
+          enum: ["", auto, manual, hardcode]
+        state: { $ref: "#/components/schemas/PresentationState" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    DisplayQueuePage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/DisplayQueueItem" }
+
+    ContentAsset:
+      type: object
+      required:
+        - assetIndex
+        - type
+        - text
+        - url
+        - filename
+        - contentType
+        - sizeBytes
+        - uploadState
+      properties:
+        assetIndex: { type: integer, minimum: 0 }
+        type: { type: string, enum: [text, link, image, file] }
+        text: { type: [string, "null"] }
+        url: { type: [string, "null"], format: uri }
+        filename: { type: [string, "null"] }
+        contentType: { type: [string, "null"] }
+        sizeBytes: { type: [integer, "null"], minimum: 0 }
+        uploadState: { $ref: "#/components/schemas/ContentAssetUploadState" }
+
+    ContentUpload:
+      type: object
+      required: [status, failedAssetIndexes]
+      properties:
+        status: { $ref: "#/components/schemas/ContentUploadStatus" }
+        failedAssetIndexes:
+          type: array
+          items: { type: integer, minimum: 0 }
+
+    PresentationProblem:
+      type: object
+      required: [code, message, stage, retryable, assetIndex]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        stage: { type: [string, "null"] }
+        retryable: { type: boolean }
+        assetIndex: { type: [integer, "null"], minimum: 0 }
+
+    ContentProcessing:
+      type: object
+      required: [stage, warnings, error]
+      properties:
+        stage: { $ref: "#/components/schemas/ContentProcessingStage" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/PresentationProblem" }
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/PresentationProblem"
+            - type: "null"
+
+    Content:
+      type: object
+      required:
+        - id
+        - mode
+        - requestedDisplayId
+        - intent
+        - title
+        - state
+        - assets
+        - upload
+        - processing
+        - presentationIds
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        mode: { $ref: "#/components/schemas/ContentMode" }
+        requestedDisplayId: { type: [string, "null"] }
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        state: { $ref: "#/components/schemas/ContentState" }
+        assets:
+          type: array
+          items: { $ref: "#/components/schemas/ContentAsset" }
+        upload: { $ref: "#/components/schemas/ContentUpload" }
+        processing: { $ref: "#/components/schemas/ContentProcessing" }
+        presentationIds:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ContentPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Content" }
+
+    ContentTextInput:
+      type: object
+      required: [type, text]
+      properties:
+        type: { const: text }
+        text: { type: string, minLength: 1 }
+    ContentLinkInput:
+      type: object
+      required: [type, url]
+      properties:
+        type: { const: link }
+        url: { type: string, format: uri, pattern: "^https?://" }
+    ContentImageInput:
+      type: object
+      required: [type, filename, contentType, sizeBytes]
+      properties:
+        type: { const: image }
+        filename: { type: string, minLength: 1 }
+        contentType:
+          type: string
+          enum: [image/png, image/jpeg, image/gif, image/webp, image/svg+xml]
+        sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+    ContentFileInput:
+      type: object
+      required: [type, filename, contentType, sizeBytes]
+      properties:
+        type: { const: file }
+        filename: { type: string, minLength: 1 }
+        contentType:
+          type: string
+          enum: [application/pdf, text/plain, text/markdown, application/json]
+        sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+    CreateContentAssetInput:
+      oneOf:
+        - $ref: "#/components/schemas/ContentTextInput"
+        - $ref: "#/components/schemas/ContentLinkInput"
+        - $ref: "#/components/schemas/ContentImageInput"
+        - $ref: "#/components/schemas/ContentFileInput"
+      discriminator:
+        propertyName: type
+
+    CreateContentRequest:
+      oneOf:
+        - $ref: "#/components/schemas/CreateAutoContentRequest"
+        - $ref: "#/components/schemas/CreateManualContentRequest"
+        - $ref: "#/components/schemas/CreateHardcodeContentRequest"
+      discriminator:
+        propertyName: mode
+        mapping:
+          auto: "#/components/schemas/CreateAutoContentRequest"
+          manual: "#/components/schemas/CreateManualContentRequest"
+          hardcode: "#/components/schemas/CreateHardcodeContentRequest"
+
+    CreateAutoContentRequest:
+      type: object
+      required: [mode, assets]
+      properties:
+        mode: { const: auto }
+        displayId:
+          type: "null"
+          description: Omit this field or send null; Inklet chooses the display.
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CreateContentAssetInput" }
+
+    CreateManualContentRequest:
+      type: object
+      required: [mode, displayId, assets]
+      properties:
+        mode: { const: manual }
+        displayId: { type: string, minLength: 1 }
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CreateContentAssetInput" }
+
+    CreateHardcodeContentRequest:
+      type: object
+      description: The image is scaled server-side to the target display geometry.
+      required: [mode, displayId, assets]
+      properties:
+        mode: { const: hardcode }
+        displayId: { type: string, minLength: 1 }
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: { $ref: "#/components/schemas/HardcodeImageInput" }
+
+    HardcodeImageInput:
+      type: object
+      required: [type, filename, contentType, sizeBytes]
+      properties:
+        type: { const: image }
+        filename: { type: string, minLength: 1 }
+        contentType:
+          type: string
+          enum: [image/png, image/jpeg]
+        sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+
+    UploadTicket:
+      type: object
+      required: [assetIndex, url, fields, expiresAt]
+      properties:
+        assetIndex: { type: integer, minimum: 0 }
+        url: { type: string, format: uri }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    CreateContentResponse:
+      type: object
+      required: [content, uploadTickets]
+      properties:
+        content: { $ref: "#/components/schemas/Content" }
+        uploadTickets:
+          type: array
+          items: { $ref: "#/components/schemas/UploadTicket" }
+
+    PresentationImage:
+      type: object
+      required: [url, format, width, height, expiresAt, updatedAt]
+      properties:
+        url: { type: string, format: uri }
+        format: { $ref: "#/components/schemas/PresentationImageFormat" }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        expiresAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Presentation:
+      type: object
+      required:
+        - id
+        - displayId
+        - contentIds
+        - mode
+        - state
+        - image
+        - failure
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        displayId: { type: string }
+        contentIds:
+          type: array
+          items: { type: string }
+        mode:
+          type: string
+          enum: ["", auto, manual, hardcode]
+        state: { $ref: "#/components/schemas/PresentationState" }
+        image:
+          oneOf:
+            - $ref: "#/components/schemas/PresentationImage"
+            - type: "null"
+        failure:
+          oneOf:
+            - $ref: "#/components/schemas/PresentationProblem"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Page:
+      type: object
+      required: [nextCursor, hasMore]
+      properties:
+        nextCursor: { type: [string, "null"] }
+        hasMore: { type: boolean }

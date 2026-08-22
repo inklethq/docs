@@ -3,9 +3,6 @@ title: Authentication
 description: How the inklet SDK authenticates with a personal access token, why it is server-only, and how to point it at a Compute Hub instead of the cloud.
 ---
 
-import { Callout } from "nextra/components";
-
-# Authentication
 
 The SDK authenticates with a **personal access token** (PAT), sent as a bearer
 token on every request to Inklet.
@@ -15,6 +12,10 @@ import { Inklet } from "@inklethq/sdk";
 
 const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
 ```
+
+Authentication and plan authorization are separate. A valid PAT can read the
+user's resources, while AI-backed Auto and Manual Push additionally require
+Pro. See [Plans and AI features](/plans).
 
 `secretKey` is accepted as a compatibility alias from the first alpha. Pass one
 or the other, never both — supplying both throws a `ConfigurationError`.
@@ -29,7 +30,7 @@ Inklet personal access tokens can only be used in trusted server environments.
 Move this request to a server, serverless function, or controlled local service.
 ```
 
-<Callout type="warning">
+<Callout type="warn">
   This is a guard, not a guarantee. It stops an accidental import from leaking
   a token into a client bundle; it does not make a token safe to ship. Treat a
   PAT the way you would treat a database password.
@@ -109,6 +110,7 @@ It must match the standard `fetch` signature. If the runtime has no global
 | `InvalidSecretKeyError` | 401 with no more specific code | Same — verify the token |
 | `RevokedSecretKeyError` | The token was revoked | Issue a new token and redeploy |
 | `PermissionDeniedError` | Valid token, insufficient scope | Check what the token is scoped to |
+| `SubscriptionRequiredError` | Valid token, but the feature requires Pro | Manage the subscription in the Inklet portal; keep the same PAT |
 
 All four extend `InkletError`; the first three also extend
 `AuthenticationError`, so you can catch the whole class at once:

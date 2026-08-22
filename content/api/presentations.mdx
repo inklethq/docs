@@ -3,9 +3,6 @@ title: Presentations
 description: The Presentation resource — a rendered frame for one display, available as PNG, RAW2, or RAW4.
 ---
 
-import { Callout } from "nextra/components";
-
-# Presentations
 
 A Presentation is one rendered frame for one display. A single Content can
 produce several — one per display it routed to.
@@ -41,32 +38,11 @@ format — not every panel produces every one.
 
 ## The `Presentation` type
 
-```ts
-interface Presentation {
-  id: string;
-  displayId: string;
-  contentIds: readonly string[];
-  mode: "auto" | "manual" | "hardcode" | "";
-  state: "preparing" | "queued" | "published" | "confirmed" | "expired" | "failed";
-  image: PresentationImage | null;
-  failure: PresentationProblem | null;
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="presentations" name="Presentation" />
 
-```ts
-interface PresentationImage {
-  url: string;
-  format: "png" | "raw2" | "raw4";
-  width: number;
-  height: number;
-  expiresAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="presentations" name="PresentationImage" />
 
-<Callout type="warning">
+<Callout type="warn">
   `image.url` is temporary — `expiresAt` says when it stops working. Download
   the bytes if you need to keep them; do not store the URL.
 </Callout>
@@ -76,15 +52,7 @@ interface PresentationImage {
 
 ## Failures
 
-```ts
-interface PresentationProblem {
-  code: string;
-  message: string;
-  stage: string | null;
-  retryable: boolean;
-  assetIndex: number | null;
-}
-```
+<SdkType file="presentations" name="PresentationProblem" />
 
 `retryable` tells you whether pushing the same content again is worth trying.
 `assetIndex` points at the specific asset that caused it, when one did.

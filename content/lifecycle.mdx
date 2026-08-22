@@ -3,9 +3,6 @@ title: Lifecycle
 description: Content and Presentation states in the inklet SDK, how to poll for a finished render, and how idempotency keys make a push safe to replay.
 ---
 
-import { Callout, Steps } from "nextra/components";
-
-# Lifecycle
 
 A push is a request, not a render. The call returns as soon as Inklet has your
 assets; summarising, routing, and rendering happen after — and a display only
@@ -57,7 +54,7 @@ preparing ──→ queued ──→ published ──→ confirmed
 | `expired` | Superseded or timed out before it was shown. |
 | `failed` | Rendering or delivery failed; see `presentation.failure`. |
 
-<Callout type="warning">
+<Callout type="warn">
   A `ready` Content means its Presentation IDs are **persisted**, not that every
   frame is rendered. An individual Presentation can still be `preparing` for a
   moment after that. If you need the image bytes, poll the Presentation too.
@@ -65,7 +62,7 @@ preparing ──→ queued ──→ published ──→ confirmed
 
 ## Polling
 
-<Steps>
+<div className="fd-steps [&_h3]:fd-step">
 
 ### Wait for the Content
 
@@ -101,7 +98,7 @@ for (const id of content.presentationIds) {
 }
 ```
 
-</Steps>
+</div>
 
 A production poller should add a ceiling and back off rather than looping at a
 fixed interval forever:
@@ -162,7 +159,7 @@ throws a `ConfigurationError`.
 
 For binary assets, `push.*` does more than one round trip:
 
-<Steps>
+<div className="fd-steps [&_h3]:fd-step">
 
 ### Create
 
@@ -184,7 +181,7 @@ assets and retries them once.
 The Content is confirmed. If it comes back `partial`, the SDK refreshes and
 retries the still-missing assets once more, then confirms again.
 
-</Steps>
+</div>
 
 If assets are still missing after that, the SDK throws:
 

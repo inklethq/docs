@@ -3,9 +3,6 @@ title: Introduction
 description: The server-side TypeScript SDK for inklet e-ink displays — push text, links, images, and PDFs, and let Inklet handle layout, routing, and rendering.
 ---
 
-import { Cards, Callout } from "nextra/components";
-
-# inklet Portal SDK
 
 `@inklethq/sdk` is the server-side client for inklet displays. You hand it
 something worth showing — a sentence, a link, a chart, a PDF — and Inklet
@@ -27,7 +24,7 @@ await inklet.push.auto({
 });
 ```
 
-<Callout type="warning">
+<Callout type="warn">
   A personal access token is a server credential. The SDK refuses to construct
   a client in any environment with a `document`, so a token cannot reach a
   browser bundle by accident. See [Authentication](/authentication).
@@ -51,15 +48,15 @@ the next time it wakes.
 ## Three ways to push
 
 <Cards>
-  <Cards.Card title="Auto" href="/push/auto" arrow>
+  <Card title="Auto" href="/push/auto">
     Inklet chooses the displays and the layout.
-  </Cards.Card>
-  <Cards.Card title="Manual" href="/push/manual" arrow>
+  </Card>
+  <Card title="Manual" href="/push/manual">
     You choose the display; Inklet still sets the type.
-  </Cards.Card>
-  <Cards.Card title="Hardcode" href="/push/hardcode" arrow>
+  </Card>
+  <Card title="Hardcode" href="/push/hardcode">
     You supply the finished image.
-  </Cards.Card>
+  </Card>
 </Cards>
 
 ## Requirements
@@ -74,16 +71,16 @@ included; you do not need a `@types` package.
 ## Where to go next
 
 <Cards>
-  <Cards.Card title="Getting started" href="/getting-started" arrow>
+  <Card title="Getting started" href="/getting-started">
     Install, authenticate, and land your first push.
-  </Cards.Card>
-  <Cards.Card title="Lifecycle" href="/lifecycle" arrow>
+  </Card>
+  <Card title="Lifecycle" href="/lifecycle">
     Why a successful push is not yet a rendered frame.
-  </Cards.Card>
-  <Cards.Card title="API reference" href="/api/client" arrow>
+  </Card>
+  <Card title="API reference" href="/api/client">
     Every resource, option, and return type.
-  </Cards.Card>
-  <Cards.Card title="Errors" href="/errors" arrow>
+  </Card>
+  <Card title="Errors" href="/errors">
     The error classes and what to do about each.
-  </Cards.Card>
+  </Card>
 </Cards>

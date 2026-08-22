@@ -3,21 +3,22 @@ title: Pushing content
 description: The three push workflows in the inklet SDK — Auto, Manual, and Hardcode — and what each one decides for you.
 ---
 
-import { Callout, Cards } from "nextra/components";
-
-# Pushing content
 
 `inklet.push.*` is the high-level entry point. Each method takes assets,
 creates a Content, uploads any binaries, retries a failed upload once, confirms
 the Content, and hands back the result.
 
-The three methods differ only in **how much of the decision you keep**.
+The three methods differ in **how much of the decision you keep** and whether
+Inklet AI processes the assets.
 
-| | Chooses the display | Lays out the content | Assets |
-| --- | --- | --- | --- |
-| [`push.auto`](/push/auto) | Inklet | Inklet | 1–50, any type |
-| [`push.manual`](/push/manual) | You | Inklet | 1–50, any type |
-| [`push.hardcode`](/push/hardcode) | You | You | exactly 1 PNG or JPEG |
+| | Chooses the display | Lays out the content | Plan | Assets |
+| --- | --- | --- | --- | --- |
+| [`push.auto`](/push/auto) | Inklet | Inklet AI | Pro | 1–50, any type |
+| [`push.manual`](/push/manual) | You | Inklet AI | Pro | 1–50, any type |
+| [`push.hardcode`](/push/hardcode) | You | You | Free or Pro | exactly 1 PNG or JPEG |
+
+See [Plans and AI features](/plans) for authorization behavior and upgrade
+handling.
 
 ## Shared options
 
@@ -36,17 +37,9 @@ Every push accepts:
 
 All three return the same shape:
 
-```ts
-interface PushResult {
-  contentId: string;
-  state: "pending" | "processing" | "ready" | "failed";
-  presentationIds: readonly string[];
-  idempotencyKey: string;
-  content: Content;
-}
-```
+<SdkType file="push" name="PushResult" />
 
-<Callout type="warning">
+<Callout type="warn">
   `presentationIds` is commonly **empty** on return, and `state` is commonly
   `processing`. That is success, not failure — rendering happens after the call.
   See [Lifecycle](/lifecycle).
@@ -81,13 +74,13 @@ Limits: **10 MiB** per binary asset, **50** assets per Content. See
 [Assets](/api/assets) for accepted content types.
 
 <Cards>
-  <Cards.Card title="Auto" href="/push/auto" arrow>
+  <Card title="Auto" href="/push/auto">
     Let Inklet pick the room.
-  </Cards.Card>
-  <Cards.Card title="Manual" href="/push/manual" arrow>
+  </Card>
+  <Card title="Manual" href="/push/manual">
     Name the display, keep the typesetting.
-  </Cards.Card>
-  <Cards.Card title="Hardcode" href="/push/hardcode" arrow>
+  </Card>
+  <Card title="Hardcode" href="/push/hardcode">
     Send a finished image.
-  </Cards.Card>
+  </Card>
 </Cards>

@@ -1,0 +1,5 @@
+{
+  "title": "Pushing content",
+  "defaultOpen": true,
+  "pages": ["index", "auto", "manual", "hardcode"]
+}

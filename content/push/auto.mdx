@@ -3,9 +3,11 @@ title: Auto Push
 description: inklet.push.auto lets Inklet choose which compatible displays receive the content and how it is laid out.
 ---
 
-import { Callout } from "nextra/components";
 
-# Auto Push
+<Callout type="warn">
+  Auto uses Inklet AI and requires an active Pro subscription. A Free account
+  receives `SubscriptionRequiredError`; manage the plan in the Inklet portal.
+</Callout>
 
 Use Auto when you have something worth showing and no strong opinion about
 where it goes. Inklet reads the assets, picks the compatible displays, and
@@ -27,14 +29,9 @@ const result = await inklet.push.auto({
 
 ```ts
 inklet.push.auto(input: AutoPushInput): Promise<AutoPushResult>
-
-interface AutoPushInput {
-  assets: readonly InkletAsset[];
-  title?: string;
-  intent?: string;
-  idempotencyKey?: string;
-}
 ```
+
+<SdkType file="push" name="AutoPushInput" />
 
 `displayId` is not accepted — passing one to the underlying Content resource
 throws `ConfigurationError` ("Auto Content must omit displayId"). Auto is
@@ -72,5 +69,8 @@ for (const id of content.presentationIds) {
 | `assets` empty | `ConfigurationError` — "Auto Push requires at least one Asset." |
 | More than 50 assets | `ConfigurationError` |
 | An asset fails validation | `ConfigurationError`, naming the asset index |
+| The PAT owner is on Free | `SubscriptionRequiredError` — upgrade to Pro, then retry with the same PAT |
 
-All of these throw locally, before a request is sent.
+The validation errors throw locally, before a request is sent. Subscription
+authorization is enforced by the Inklet service before it creates a Content or
+any upload tickets.

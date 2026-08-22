@@ -3,9 +3,11 @@ title: Manual Push
 description: inklet.push.manual targets one display by id while Inklet still summarises and lays out the assets.
 ---
 
-import { Callout } from "nextra/components";
 
-# Manual Push
+<Callout type="warn">
+  Manual uses Inklet AI for understanding, summarization, and layout, so it
+  requires an active Pro subscription even though you choose the Display.
+</Callout>
 
 Use Manual when you know the room but still want Inklet to set the type. The
 asset pipeline is identical to Auto — links are fetched, content is summarised,
@@ -32,15 +34,9 @@ const result = await inklet.push.manual({
 
 ```ts
 inklet.push.manual(input: ManualPushInput): Promise<ManualPushResult>
-
-interface ManualPushInput {
-  displayId: string;
-  assets: readonly InkletAsset[];
-  title?: string;
-  intent?: string;
-  idempotencyKey?: string;
-}
 ```
+
+<SdkType file="push" name="ManualPushInput" />
 
 ## Finding the display id
 
@@ -76,5 +72,6 @@ which can serve as your lookup key. See [Displays](/api/displays).
 | `assets` empty | `ConfigurationError` — "Manual Push requires at least one Asset." |
 | Display id does not exist | `NotFoundError` (from the backend) |
 | Token cannot reach that display | `PermissionDeniedError` |
+| The PAT owner is on Free | `SubscriptionRequiredError` — upgrade to Pro, then retry with the same PAT |
 
-The first two throw locally; the last two come back from the API.
+The first two throw locally; the remaining errors come back from the API.
