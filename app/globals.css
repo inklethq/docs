@@ -83,6 +83,7 @@ h1[class~="text-[1.75em]"],
 h1[class~="text-[1.75em]"],
 [data-docs-title] {
   font-weight: 300;
+  letter-spacing: -0.01em;
 }
 
 .prose h3,
@@ -101,7 +102,7 @@ h1[class~="text-[1.75em]"],
   margin-left: 0.22rem;
   font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-size: 0.62rem;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.54;
   vertical-align: 0.16em;
