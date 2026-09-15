@@ -200,17 +200,30 @@ the `context` refs. A Content appears at most once.
 ### Renditions and images
 
 ```ts
+type PresentationRenditionState = "preparing" | "ready" | "failed";
+
 interface PresentationRendition {
   id: string;
   mediaType: "image/png";
   format: "png";
   width: number;
   height: number;
-  url: string;
-  expiresAt: string;
+  colorMode: "color" | "grayscale" | "monochrome";
+  state: PresentationRenditionState;
+  url: string | null;
+  expiresAt: string | null;
   updatedAt: string;
+  failure: PresentationProblem | null;
 }
 ```
+
+Each rendition has its own lifecycle, independent of the Presentation's
+`state`. `preparing` means the render has not landed yet — read the
+Presentation again until it settles. `failed` means this one geometry could not
+be produced; `failure` says why, the Scene and sibling renditions are
+unaffected, and asking for the same geometry again returns the same rendition
+rather than retrying. `url` and `expiresAt` are `null` whenever there is no PNG
+to link to, so branch on `url`, never on `state` alone.
 
 <SdkType file="presentations" name="PresentationImage" />
 
@@ -323,7 +336,26 @@ render(
 ): Promise<PresentationRendition>
 ```
 
-The output format is always `png`.
+The output format is always `png`. The first call for a new geometry returns
+the rendition in `state: "preparing"` with `url: null`; the backend
+deduplicates on format, viewport, and colour mode, so calling again with the
+same input returns that same rendition as it stands instead of rendering
+twice. Poll `retrieve()` until the rendition's `url` is set:
+
+```ts
+let rendition = await inklet.presentations.render(presentation.id, {
+  viewport: { width: 720, height: 340 },
+});
+
+while (rendition.state === "preparing") {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const latest = await inklet.presentations.retrieve(presentation.id);
+  rendition = latest.renditions.find((r) => r.id === rendition.id) ?? rendition;
+}
+
+if (rendition.url) await download(rendition.url);
+else console.error(rendition.failure?.message);
+```
 
 ## Downloading a frame
 
