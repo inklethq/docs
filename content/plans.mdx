@@ -1,47 +1,105 @@
 ---
 title: Plans and AI features
-description: Which inklet SDK features use AI, which plan they require, and how plan authorization failures are reported.
+description: Which inklet SDK features use AI, which plan they require, the quotas each plan carries, and how far back display history reaches.
 ---
 
 
 inklet authorizes every SDK request against the current plan of the user who
 owns the personal access token. A valid PAT proves who the caller is; the plan
-decides which processing features that user can run.
+decides which processing features that user can run, and how much history they
+can read.
 
 | SDK capability | Free | Pro | Uses inklet AI |
 | --- | --- | --- | --- |
-| Read Displays, Contents, Presentations, queues, and current frames | Yes | Yes | No |
-| Hardcode Push | Yes | Yes | No |
-| Auto Push | No | Yes | Yes |
-| Manual Push | No | Yes | Yes |
+| Read Displays, Contents, Analyses, Presentations, queues, and current frames | Yes | Yes | No |
+| Upload Content | Yes | Yes | No |
+| Switch what a display shows (`setCurrent`, `advance`) | Yes | Yes | No |
+| `analyses.direct()`, Hardcode Push, and `presentations.generate({ mode: "hardcode" })` | Yes | Yes | No |
+| `analyses.analyze()`, Auto Push, Manual Push, and `presentations.generate()` | No | Yes | Yes |
 
-Manual Push still requires Pro. Choosing the Display yourself skips automatic
-routing, but inklet still fetches, understands, summarizes, and lays out the
-assets. Hardcode Push receives a finished PNG or JPEG and only scales it to the
-Display output size, so it remains available on Free.
+Manual Push still requires Pro. Choosing the display yourself skips automatic
+routing, but inklet still reads, plans, and lays out the assets.
+`analyses.direct()` — which is what Hardcode Push uses — receives a finished PNG
+or JPEG and only scales it to the output size, so it remains available on Free.
+
+<Callout>
+  The gate is on the Analysis, not on the upload. `contents.upload()` works on
+  every plan; a `mode: "ai"` Analysis is what requires Pro, and
+  `contents.create()` cannot bypass it.
+</Callout>
+
+## Quotas
+
+| Limit | Free | Pro |
+| --- | --- | --- |
+| Displays bound to the account | Unlimited | Unlimited |
+| Pushes per UTC day | 10 | 200 |
+| Live personal access tokens | 2 | 20 |
+| Display history readable | 7 days | Unlimited |
+
+Running out of a counted quota is a `429` with `code: "quota_exceeded"`, which
+the SDK raises as a `RateLimitError`. Its `details` carry `quota`, `limit`,
+`used`, `currentTier`, and `resetAt` — the instant the window rolls over.
+
+## History depth
+
+The plan also caps how far back the SDK can look, and it is the one quota that
+shapes responses rather than refusing them.
+
+**Reading a display's history.**
+[`presentations.list()`](/api/presentations#the-history-window) clamps instead
+of failing: display Presentations older than the floor are left out of `items`,
+and the page reports the floor in `historyWindowStart`.
+
+```ts
+const history = await inklet.presentations.list({ displayId: display.id });
+
+if (history.historyWindowStart) {
+  const since = new Date(history.historyWindowStart);
+  console.log(`Showing history since ${since.toLocaleDateString()}`);
+}
+```
+
+**Analyzing history.** An Analysis with `context: "history"` explores the same
+window. An earlier `scope.since` than the plan allows is clamped at creation
+rather than rejected, and the resolved absolute start comes back on
+`analysis.scope.sinceAt` — compare it against what you asked for when you need
+to tell a user how much was really covered.
+
+<Callout>
+  Nothing is deleted. The hidden rows come back on the same call after an
+  upgrade. `presentations.retrieve()`, `displays.listQueue()`, and
+  `displays.current()` are not affected either: a Presentation whose id you
+  already hold stays readable whatever the plan says.
+</Callout>
 
 ## Authorization failures
 
-Auto or Manual Push on Free fails with `SubscriptionRequiredError`:
+A plan refusal is not transient. Do not retry it until the subscription
+changes.
+
+| Status | `code` | What it means | The way out |
+| --- | --- | --- | --- |
+| 403 | `plan_upgrade_required` | The plan does not include this feature | Upgrade |
+| 402 | `payment_required` | The plan includes it, but a payment did not land | Fix the card |
 
 ```ts
-import { SubscriptionRequiredError } from "@inklethq/sdk";
+import { ApiError, PermissionDeniedError } from "@inklethq/sdk";
 
 try {
   await inklet.push.auto({ assets });
 } catch (error) {
-  if (error instanceof SubscriptionRequiredError) {
-    console.error(error.code); // "subscription_required"
-    console.error(error.requestId);
-    console.error(error.details);
+  if (error instanceof PermissionDeniedError && error.code === "plan_upgrade_required") {
+    console.error(error.details); // { feature, requiredTier, currentTier, status }
+  }
+  if (error instanceof ApiError && error.code === "payment_required") {
+    // Send the customer to the billing portal, not to checkout.
   }
 }
 ```
 
-The error extends `PermissionDeniedError`. It is not transient: do not retry
-until the subscription changes. The backend may include `currentPlan`,
-`requiredPlan`, and `feature` in `details`; treat `details` as structured
-diagnostic context rather than UI copy.
+The two codes are deliberately different: one customer has not bought the
+feature, the other has and needs a working card. See [Errors](/errors).
 
 <Callout>
   Upgrade or manage the subscription in the
@@ -54,8 +112,5 @@ diagnostic context rather than UI copy.
 
 You do not need to issue a new PAT. Authorization uses the token owner's
 current server-side plan on each request, so retry the operation with the same
-client after the plan change is active.
-
-The plan check is enforced by the inklet service for both `inklet.push.*` and
-the lower-level Content endpoints. Calling `contents.create()` directly does
-not bypass it.
+client once the plan change is active — and the history that was clipped is
+back on the next read.

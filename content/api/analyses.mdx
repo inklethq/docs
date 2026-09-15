@@ -1,0 +1,256 @@
+---
+title: Analyses
+description: The Analysis resource — run the inklet agent over uploaded Content and the user's history, target a display or a viewport, and wait for the result.
+---
+
+
+An Analysis is the unit of work. A Content is only the material you submitted;
+nothing is read, laid out, or rendered until an Analysis references it.
+
+```ts
+const { content } = await inklet.contents.upload({
+  assets: [inklet.assets.text("Dentist at 9am tomorrow")],
+});
+
+const analysis = await inklet.analyze({
+  contentIds: [content.id],
+  intent: "Make a reminder card",
+});
+
+const done = await inklet.analyses.wait(analysis);
+console.log(done.outcome, done.presentationIds);
+```
+
+`inklet.analyze()` and `inklet.direct()` are shorthands for
+`inklet.analyses.analyze()` and `inklet.analyses.direct()`.
+
+## `analyze()`
+
+```ts
+analyze(input?: AnalyzeInput): Promise<Analysis>
+```
+
+```ts
+interface AnalyzeInput {
+  /** Omit or leave empty to analyze recent history without new Content. */
+  contentIds?: readonly string[];
+  /** Defaults to `submitted` when `contentIds` is given, else `history`. */
+  context?: AnalysisContext;
+  /** Only meaningful with `context: "history"`. */
+  scope?: AnalysisScopeInput;
+  intent?: string | null;
+  title?: string | null;
+  /** Omit to let the agent choose Displays. */
+  target?: AnalysisTargetInput;
+  idempotencyKey?: string;
+}
+```
+
+| Option | What it does |
+| --- | --- |
+| `contentIds` | The Contents to analyze. Naming them rules out `no_change`: every Content you name appears in at least one Presentation, or the Analysis fails with `no_presentable_content`. |
+| `context` | `submitted` — only the Contents you named. `history` — the agent may also retrieve the user's earlier Contents. |
+| `scope` | `{ since: "72h" }`, the look-back window for `history`. A relative duration matching `/^\d+[mhd]$/`. |
+| `target` | Omit to let the agent choose Displays, `{ displayId }` or `{ displayIds }` to pin them, `{ output }` for a display-free Scene or PNG. |
+| `intent` | A sentence of direction for the agent. |
+| `title` | Overrides the title inklet would generate. |
+| `idempotencyKey` | Generated when omitted. See [Idempotency](/lifecycle#idempotency). |
+
+`context` defaults to `submitted` when `contentIds` is non-empty and to
+`history` when it is empty. `context: "submitted"` with no `contentIds` throws
+`ConfigurationError`, and so does `scope` on anything but `history`.
+
+## `direct()`
+
+One uploaded image shown as sent, with no AI:
+
+```ts
+direct(input: DirectInput): Promise<Analysis>
+```
+
+```ts
+interface DirectInput {
+  /** A Content holding exactly one PNG or JPEG image. */
+  contentId: string;
+  target: AnalysisTargetInput;
+  idempotencyKey?: string;
+}
+```
+
+A direct Analysis requires exactly one `contentId`, `context: "submitted"`, and
+a target. inklet scales the image to the target geometry server-side, which is
+what [Hardcode Push](/push/hardcode) uses underneath.
+
+## `create()`
+
+```ts
+create(input: CreateAnalysisRequest, idempotencyKey: string): Promise<Analysis>
+```
+
+The same request with `mode` explicit and the key required —
+`analyze()` and `direct()` are wrappers over it that generate a key when you do
+not supply one.
+
+## Targets
+
+```ts
+type AnalysisTargetInput =
+  | { displayId: string }
+  | { displayIds: readonly string[] }
+  | { output: PresentationOutputRequest };
+```
+
+Exactly one of the three keys, or `ConfigurationError`. Omitting `target`
+entirely is the fourth option, and the one that lets the agent route for you.
+
+An `{ output }` target produces a display-free Presentation — Scene JSON and
+PNG renditions, no panel involved. See
+[Generating without a display](/api/presentations#generating-without-a-display).
+
+<Callout type="warn">
+  A targetless Analysis needs at least one display it can actually use. When
+  the account has none that fits, `POST /analyses` fails immediately with
+  `422` and `code: "no_compatible_display"`, which the SDK surfaces as an
+  `ApiError`. Give a `target` — including an `{ output }` target — when there
+  may be no panel.
+</Callout>
+
+## `retrieve()` and `list()`
+
+```ts
+const analysis = await inklet.analyses.retrieve("analysis_123");
+
+const page = await inklet.analyses.list({
+  state: "completed",
+  trigger: "scheduled",
+  limit: 20,
+});
+```
+
+```ts
+interface ListAnalysesOptions {
+  /** Only Analyses that listed this Content in contentIds (role "input"). */
+  contentId?: string;
+  state?: AnalysisState;
+  trigger?: AnalysisTrigger;
+  cursor?: string;
+  limit?: number;
+}
+```
+
+`trigger` is `api` for the ones you started and `scheduled` for the ones
+inklet runs on the user's behalf. An out-of-range `state`, `trigger`, or
+`limit` throws `ConfigurationError` locally.
+
+## `wait()`
+
+```ts
+wait(
+  analysisOrId: Analysis | string,
+  options?: WaitForAnalysisOptions,
+): Promise<Analysis>
+```
+
+Polls until the Analysis is `completed` and returns it. A `failed` Analysis
+throws `AnalysisFailedError`, with the backend's own code on
+`error.details.backendCode`.
+
+| Option | Default | Range |
+| --- | --- | --- |
+| `pollIntervalMs` | `1000` | 100–60,000 |
+| `timeoutMs` | `120000` | 1–1,800,000 |
+| `signal` | — | Aborting throws `OperationAbortedError` |
+
+<Callout>
+  The 120-second default suits a `submitted` Analysis. Analyses with
+  `context: "history"` run one at a time per user, and scheduled ones queue
+  behind them, so raise `timeoutMs` for those. A timeout throws
+  `OperationTimeoutError` but does **not** cancel the Analysis —
+  `analyses.retrieve()` still returns it once it finishes.
+</Callout>
+
+## The `Analysis` type
+
+```ts
+interface Analysis {
+  id: string;
+  mode: "ai" | "direct";
+  trigger: "api" | "scheduled";
+  state: "queued" | "running" | "completed" | "failed";
+  outcome: "presentations" | "no_change" | null;
+  noChangeReason: string | null;
+  contentIds: readonly string[];
+  context: "submitted" | "history";
+  scope: AnalysisScope | null;
+  intent: string | null;
+  title: string | null;
+  /** `null` means the agent chose (or will choose) the Displays. */
+  target: AnalysisTarget | null;
+  presentationIds: readonly string[];
+  failure: PresentationProblem | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### States
+
+```text
+queued ──→ running ──→ completed
+                   └─→ failed
+```
+
+`queued` and `running` are not terminal; `completed` and `failed` are. See
+[Lifecycle](/lifecycle#analysis-states).
+
+### Outcome
+
+`outcome` is `null` until the Analysis finishes, then one of two answers.
+
+| Outcome | Meaning |
+| --- | --- |
+| `presentations` | `presentationIds` is populated. |
+| `no_change` | The agent looked and decided nothing was worth showing. `noChangeReason` says why. |
+
+`no_change` is a normal completion, not a failure, and it is only reachable
+when the Analysis named no `contentIds`. Name a Content and inklet either
+covers it or fails the Analysis with `no_presentable_content`.
+
+### Scope and the history window
+
+```ts
+interface AnalysisScope {
+  /** What you asked for: a relative duration such as "24h", "7d", "90m". */
+  since: string;
+  /** The absolute start the backend resolved at creation time, or null. */
+  sinceAt: string | null;
+}
+```
+
+`since` is resolved to an absolute `sinceAt` when the Analysis is created, so
+an Analysis that sits in `queued` still reads the window it was created with.
+The plan caps how far back history reaches, and an earlier `since` is clamped
+to that floor rather than rejected — compare `scope.sinceAt` against what you
+asked for when you need to tell a user how much was really covered. See
+[Plans](/plans#history-depth).
+
+## Following a run
+
+An Analysis publishes an ordered event stream while it works. It has its own
+page:
+
+<Cards>
+  <Card title="Analysis events" href="/api/events">
+    `watch()`, `timeline()`, `listEvents()`, and every public event type.
+  </Card>
+</Cards>
+
+## `archive()`
+
+```ts
+const { url, expiresAt } = await inklet.analyses.archive("analysis_123");
+```
+
+A short-lived download URL for the run archive. Throws `NotFoundError` with
+`code: "archive_not_found"` when there is none — while the Analysis is still
+running, or after retention has expired.

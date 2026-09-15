@@ -4,9 +4,10 @@ description: The three push workflows in the inklet SDK — Auto, Manual, and Ha
 ---
 
 
-`inklet.push.*` is the high-level entry point. Each method takes assets,
-creates a Content, uploads any binaries, retries a failed upload once, confirms
-the Content, and hands back the result.
+`inklet.push.*` is the high-level entry point: one call that uploads a
+[Content](/api/contents) and immediately starts an [Analysis](/api/analyses)
+over it. Each method takes assets, uploads any binaries, retries a failed
+upload once, and hands back both objects.
 
 The three methods differ in **how much of the decision you keep** and whether
 inklet AI processes the assets.
@@ -22,28 +23,46 @@ handling.
 
 ## Shared options
 
-Every push accepts:
+`push.auto` and `push.manual` accept:
 
 | Option | Type | Notes |
 | --- | --- | --- |
 | `assets` | `InkletAsset[]` | At least one. Build them with `inklet.assets.*`. |
-| `title` | `string` | Optional label, shown in the dashboard. |
+| `title` | `string` | Optional label. Overrides the title inklet would generate. |
 | `intent` | `string` | Optional sentence of direction for the layout. |
+| `context` | `"submitted" \| "history"` | Defaults to `submitted`. `history` lets the agent also read the user's earlier Contents. |
 | `idempotencyKey` | `string` | Optional. Generated if omitted, and always returned. |
 
-`push.manual` and `push.hardcode` additionally require `displayId`.
+`push.manual` additionally requires `displayId`. `push.hardcode` takes only
+`displayId`, `image`, and `idempotencyKey` — there is nothing for a title or an
+intent to steer.
 
 ## Shared result
 
 All three return the same shape:
 
-<SdkType file="push" name="PushResult" />
+```ts
+interface PushResult {
+  contentId: string;
+  analysisId: string;
+  /** The Analysis state, not the Content state. */
+  state: "queued" | "running" | "completed" | "failed";
+  presentationIds: readonly string[];
+  idempotencyKey: string;
+  content: Content;
+  analysis: Analysis;
+}
+```
 
 <Callout type="warn">
   `presentationIds` is commonly **empty** on return, and `state` is commonly
-  `processing`. That is success, not failure — rendering happens after the call.
-  See [Lifecycle](/lifecycle).
+  `queued`. That is success, not failure — the run happens after the call.
+  Use `inklet.analyses.wait(result.analysisId)` or
+  [`watch()`](/api/events) to follow it. See [Lifecycle](/lifecycle).
 </Callout>
+
+One idempotency key covers both writes: the Content and the Analysis are
+created under the same key, in their own namespaces.
 
 ## What `intent` is for
 

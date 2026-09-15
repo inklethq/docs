@@ -36,7 +36,16 @@ const result = await inklet.push.manual({
 inklet.push.manual(input: ManualPushInput): Promise<ManualPushResult>
 ```
 
-<SdkType file="push" name="ManualPushInput" />
+```ts
+interface ManualPushInput {
+  displayId: string;
+  assets: readonly InkletAsset[];
+  title?: string;
+  intent?: string;
+  context?: "submitted" | "history";
+  idempotencyKey?: string;
+}
+```
 
 ## Finding the display id
 
@@ -70,8 +79,10 @@ which can serve as your lookup key. See [Displays](/api/displays).
 | --- | --- |
 | `displayId` missing or blank | `ConfigurationError` — "Manual Push requires displayId." |
 | `assets` empty | `ConfigurationError` — "Manual Push requires at least one Asset." |
-| Display id does not exist | `NotFoundError` (from the backend) |
-| Token cannot reach that display | `PermissionDeniedError` |
-| The PAT owner is on Free | `SubscriptionRequiredError` — upgrade to Pro, then retry with the same PAT |
+| Display id does not exist | `NotFoundError`, `code: "display_not_found"` |
+| The display belongs to someone else | `PermissionDeniedError`, `code: "access_denied"` |
+| The display has no usable geometry | `ApiError`, `422`, `code: "display_incompatible"` |
+| The PAT owner is on Free | `PermissionDeniedError`, `403`, `code: "plan_upgrade_required"` |
 
-The first two throw locally; the remaining errors come back from the API.
+The first two throw locally; the rest come back from the API when the Analysis
+is created.

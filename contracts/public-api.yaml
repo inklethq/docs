@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: inklet SDK HTTP API
-  version: 0.1.0
+  version: 0.2.1
   description: |
     The public HTTP contract used by `@inklethq/sdk`.
 
@@ -10,6 +10,10 @@ info:
     endpoints directly. Personal access tokens are server credentials: never
     put one in browser code. The interactive browser playground is disabled in
     the public documentation for that reason.
+
+    A Content is storage; an Analysis is the work; a Presentation is the
+    result. Uploading spends nothing — creating an Analysis is the call that
+    reads, plans, renders, and delivers.
 
 servers:
   - url: https://dev.iminklet.com
@@ -20,11 +24,13 @@ security:
 
 tags:
   - name: Displays
-    description: Read displays, their delivery queues, and confirmed frames.
+    description: Read displays and their queues, and choose what a panel shows.
   - name: Contents
-    description: Create submissions and observe their processing lifecycle.
+    description: Upload assets to storage. No processing happens here.
+  - name: Analyses
+    description: Run the agent, and follow the run as it happens.
   - name: Presentations
-    description: Read rendered frames and temporary image URLs.
+    description: Read rendered frames, display history, and generated scenes.
 
 paths:
   /api/sdk/v1/displays:
@@ -49,6 +55,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DisplayPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
@@ -72,6 +79,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Display"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
@@ -81,7 +89,11 @@ paths:
       tags: [Displays]
       operationId: listDisplayQueue
       summary: List a display queue
-      description: Returns presentations queued for a display, optionally within a time range.
+      description: |
+        Returns the presentations still waiting to go on the panel, oldest
+        first within a priority. A presentation that has been delivered leaves
+        the queue — for the display's full history, use `GET /presentations`
+        with `displayId`.
       x-codeSamples:
         - id: sdk-list-display-queue
           lang: ts
@@ -146,7 +158,94 @@ paths:
                     oneOf:
                       - $ref: "#/components/schemas/Presentation"
                       - type: "null"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/displays/{displayId}/current:
+    post:
+      tags: [Displays]
+      operationId: setCurrentPresentation
+      summary: Put a presentation on the panel
+      description: |
+        Activates a presentation that has already been delivered to this
+        display and finished rendering. An `expired` one can be reactivated,
+        which is how "go back to the previous image" works.
+
+        The frame that was on the panel becomes `expired` rather than going
+        back into the queue. The switch lands on `pendingPresentationId`;
+        `currentPresentationId` follows once the panel confirms. No AI runs and
+        no push quota is consumed.
+      x-codeSamples:
+        - id: sdk-set-current-presentation
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const display = await inklet.displays.setCurrent(
+              "display_123",
+              "presentation_456",
+            );
+      parameters:
+        - $ref: "#/components/parameters/DisplayId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [presentationId]
+              properties:
+                presentationId: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: The updated display.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [display]
+                properties:
+                  display: { $ref: "#/components/schemas/Display" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotDeliverable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/displays/{displayId}/advance:
+    post:
+      tags: [Displays]
+      operationId: advanceDisplay
+      summary: Advance to the next queued presentation
+      description: |
+        Rotates to the next queued presentation, highest priority first and
+        oldest first within a priority. An empty queue answers `200` with
+        `changed: false` and changes nothing — that is a normal result, not an
+        error.
+      x-codeSamples:
+        - id: sdk-advance-display
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const { display, changed } = await inklet.displays.advance("display_123");
+      parameters:
+        - $ref: "#/components/parameters/DisplayId"
+      responses:
+        "200":
+          description: The updated display, and whether anything changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [display, changed]
+                properties:
+                  display: { $ref: "#/components/schemas/Display" }
+                  changed: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
@@ -160,20 +259,13 @@ paths:
           lang: ts
           label: TypeScript SDK
           source: |
-            const page = await inklet.contents.list({
-              mode: "manual",
-              state: "ready",
-              limit: 20,
-            });
+            const page = await inklet.contents.list({ state: "ready", limit: 20 });
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
         - name: state
           in: query
           schema: { $ref: "#/components/schemas/ContentState" }
-        - name: mode
-          in: query
-          schema: { $ref: "#/components/schemas/ContentMode" }
       responses:
         "200":
           description: A cursor page of contents.
@@ -189,33 +281,20 @@ paths:
       operationId: createContent
       summary: Create content
       description: |
-        Creates one submission and returns presigned upload tickets for binary
-        assets. `auto` and `manual` use inklet AI and require Pro. `hardcode`
-        accepts one PNG or JPEG and is available on Free and Pro.
+        Stores one submission and returns presigned upload tickets for its
+        binary assets. Nothing is processed here and no quota is spent —
+        create an Analysis to do anything with the content.
       x-codeSamples:
         - id: sdk-create-content
           lang: ts
           label: TypeScript SDK
           source: |
-            const created = await inklet.contents.create(
-              {
-                mode: "manual",
-                displayId: "display_123",
-                title: "Menu",
-                assets: [{ type: "text", text: "Tonight" }],
-              },
-              "menu-2026-08-21",
-            );
+            const { content } = await inklet.contents.upload({
+              title: "Menu",
+              assets: [inklet.assets.text("Tonight")],
+            });
       parameters:
-        - name: idempotency-key
-          in: header
-          required: true
-          description: 8–128 printable ASCII characters without spaces.
-          schema:
-            type: string
-            minLength: 8
-            maxLength: 128
-            pattern: "^[!-~]+$"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -223,7 +302,7 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateContentRequest"
       responses:
-        "200":
+        "201":
           description: Created content and upload tickets for its binary assets.
           content:
             application/json:
@@ -256,35 +335,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Content"
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-
-  /api/sdk/v1/contents/{contentId}/confirm:
-    post:
-      tags: [Contents]
-      operationId: confirmContent
-      summary: Confirm uploaded assets
-      description: Closes the upload phase and starts processing when every binary is present.
-      x-codeSamples:
-        - id: sdk-confirm-content
-          lang: ts
-          label: TypeScript SDK
-          source: |
-            const content = await inklet.contents.confirm("content_123");
-      parameters:
-        - $ref: "#/components/parameters/ContentId"
-      responses:
-        "200":
-          description: The updated content, including upload status.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Content"
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/sdk/v1/contents/{contentId}/upload-tickets:
@@ -292,7 +345,11 @@ paths:
       tags: [Contents]
       operationId: refreshContentUploadTickets
       summary: Refresh upload tickets
-      description: Issues new presigned upload tickets for selected binary asset indexes.
+      description: |
+        Issues new presigned upload tickets for selected binary asset indexes.
+        A content that failed because its upload window closed
+        (`failure.code` of `upload_expired`) returns to `pending` once new
+        tickets are issued.
       x-codeSamples:
         - id: sdk-refresh-upload-tickets
           lang: ts
@@ -330,12 +387,304 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /api/sdk/v1/analyses:
+    get:
+      tags: [Analyses]
+      operationId: listAnalyses
+      summary: List analyses
+      x-codeSamples:
+        - id: sdk-list-analyses
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const page = await inklet.analyses.list({
+              state: "completed",
+              trigger: "scheduled",
+            });
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: contentId
+          in: query
+          description: Only analyses that named this content in `contentIds`.
+          schema: { type: string, minLength: 1 }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/AnalysisState" }
+        - name: trigger
+          in: query
+          schema: { $ref: "#/components/schemas/AnalysisTrigger" }
+      responses:
+        "200":
+          description: A cursor page of analyses.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [Analyses]
+      operationId: createAnalysis
+      summary: Create an analysis
+      description: |
+        Starts an agent run over the named contents, the user's earlier
+        contents, or both. Accepted work is returned immediately with
+        `state: "queued"`; follow it with the event stream or by re-reading the
+        analysis.
+
+        `mode: "ai"` requires an active Pro subscription. `mode: "direct"`
+        shows one uploaded PNG or JPEG without AI and is available on every
+        plan.
+
+        Omitting `target` asks the agent to choose the displays — which needs
+        at least one usable display on the account, or the request is refused
+        with `422 no_compatible_display` before anything is created.
+      x-codeSamples:
+        - id: sdk-create-analysis
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const analysis = await inklet.analyze({
+              contentIds: [content.id],
+              intent: "Make a reminder card",
+            });
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnalysisRequest"
+      responses:
+        "202":
+          description: The accepted analysis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/analyses/{analysisId}:
+    get:
+      tags: [Analyses]
+      operationId: retrieveAnalysis
+      summary: Retrieve an analysis
+      x-codeSamples:
+        - id: sdk-retrieve-analysis
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const analysis = await inklet.analyses.retrieve("analysis_123");
+      parameters:
+        - $ref: "#/components/parameters/AnalysisId"
+      responses:
+        "200":
+          description: The requested analysis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/analyses/{analysisId}/events:
+    get:
+      tags: [Analyses]
+      operationId: listAnalysisEvents
+      summary: List analysis events
+      description: |
+        One page of the public event stream, oldest first. Pass the previous
+        page's `nextAfter` as `after` to continue, and read `state` to know
+        whether the run is over.
+
+        The stream is a progress report, not the run's log. The agent's turns,
+        its individual tool calls and their arguments and output, and the
+        sentences a rejected plan was faulted for are not part of the public
+        API at any depth — a `detail` query parameter is rejected with `400`.
+
+        `seq` is monotonic but **not contiguous**: it is shared with events
+        that are not published, so a public page skips numbers. Treat it as an
+        ordering and a resume token, never as a count.
+      x-codeSamples:
+        - id: sdk-list-analysis-events
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const page = await inklet.analyses.listEvents("analysis_123", {
+              after: 42,
+              limit: 100,
+            });
+      parameters:
+        - $ref: "#/components/parameters/AnalysisId"
+        - name: after
+          in: query
+          description: Exclusive lower bound on `seq`.
+          schema: { type: integer, minimum: 0, maximum: 2147483647, default: 0 }
+        - name: limit
+          in: query
+          description: Events per page. Out-of-range values are rejected, not clamped.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: A page of public analysis events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisEventPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/analyses/{analysisId}/events/stream:
+    get:
+      tags: [Analyses]
+      operationId: streamAnalysisEvents
+      summary: Stream analysis events
+      description: |
+        The same public events as `GET /analyses/{analysisId}/events`,
+        delivered as `text/event-stream`. Each frame carries the event's `seq`
+        as its SSE `id` and its `type` as the SSE `event`, so a dropped
+        connection resumes with `Last-Event-ID` — or with `after`, which wins
+        when both are present. A `: ping` comment keeps the connection alive.
+
+        The stream closes with an `end` frame once the analysis is terminal:
+        `{"state": "completed" | "failed", "lastSeq": <int>}`. Rendering and
+        delivery happen after that, so `render.*` and `delivery.*` events are
+        only visible in the paged read.
+      x-codeSamples:
+        - id: sdk-watch-analysis
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            for await (const event of inklet.analyses.watch("analysis_123")) {
+              console.log(describeEvent(event));
+            }
+      parameters:
+        - $ref: "#/components/parameters/AnalysisId"
+        - name: after
+          in: query
+          description: Resume after this `seq`. Takes precedence over `Last-Event-ID`.
+          schema: { type: integer, minimum: 0, maximum: 2147483647 }
+        - name: Last-Event-ID
+          in: header
+          description: Standard SSE resume header.
+          schema: { type: string }
+      responses:
+        "200":
+          description: An event stream of public analysis events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/analyses/{analysisId}/archive:
+    get:
+      tags: [Analyses]
+      operationId: retrieveAnalysisArchive
+      summary: Retrieve the run archive
+      description: |
+        A short-lived download URL for the analysis run archive. Answers `404`
+        with `archive_not_found` while the run is in progress, or after
+        retention has expired.
+      x-codeSamples:
+        - id: sdk-retrieve-analysis-archive
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const { url, expiresAt } = await inklet.analyses.archive("analysis_123");
+      parameters:
+        - $ref: "#/components/parameters/AnalysisId"
+      responses:
+        "200":
+          description: A temporary download URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/sdk/v1/presentations:
+    get:
+      tags: [Presentations]
+      operationId: listPresentations
+      summary: List presentations
+      description: |
+        Lists generated presentations, display presentations, or both.
+
+        `displayId` reads one panel's history and implies `scope=display` when
+        `scope` is omitted; combining it with `scope=generated` is a `400`,
+        because a generated presentation has no target display.
+
+        How far back the display half reaches depends on the plan.
+        `historyWindowStart` reports that floor: rows created before it are
+        left out rather than the request being refused, and it is `null` when
+        nothing was clipped.
+      x-codeSamples:
+        - id: sdk-list-presentations
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const page = await inklet.presentations.list({
+              displayId: "display_123",
+              state: "expired",
+              limit: 20,
+            });
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: scope
+          in: query
+          description: Defaults to `generated`, or to `display` when `displayId` is given.
+          schema: { type: string, enum: [generated, display, all] }
+        - name: displayId
+          in: query
+          description: Keep only presentations targeted at this display.
+          schema: { type: string, minLength: 1 }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/PresentationState" }
+      responses:
+        "200":
+          description: A cursor page of presentations, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /api/sdk/v1/presentations/{presentationId}:
     get:
       tags: [Presentations]
       operationId: retrievePresentation
       summary: Retrieve a presentation
-      description: Optionally asks for a temporary image URL in a specific output format.
+      description: |
+        Readable by id whatever the plan's history depth allows — the window
+        only applies to listing.
       x-codeSamples:
         - id: sdk-retrieve-presentation
           lang: ts
@@ -360,6 +709,43 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /api/sdk/v1/presentations/{presentationId}/renditions:
+    post:
+      tags: [Presentations]
+      operationId: createPresentationRendition
+      summary: Render a stored scene again
+      description: |
+        Rasterises the presentation's stored scene at another size or color
+        mode. No AI runs and the scene itself is never changed.
+      x-codeSamples:
+        - id: sdk-create-presentation-rendition
+          lang: ts
+          label: TypeScript SDK
+          source: |
+            const rendition = await inklet.presentations.render("presentation_123", {
+              viewport: { width: 720, height: 340 },
+            });
+      parameters:
+        - $ref: "#/components/parameters/PresentationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutputRequest"
+      responses:
+        "200":
+          description: The rendition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rendition"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -379,6 +765,21 @@ components:
       in: query
       description: Number of items to return.
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        8–128 printable ASCII characters without spaces. Required. Replaying a
+        key with the same body returns the original response verbatim; reusing
+        it with a different body is `409 idempotency_conflict`, and reusing it
+        while the first call is still in flight is `409 invalid_state`. Keys
+        are remembered for 24 hours, and a rejected request releases its key.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[!-~]+$"
     DisplayId:
       name: displayId
       in: path
@@ -386,6 +787,11 @@ components:
       schema: { type: string, minLength: 1 }
     ContentId:
       name: contentId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    AnalysisId:
+      name: analysisId
       in: path
       required: true
       schema: { type: string, minLength: 1 }
@@ -397,101 +803,216 @@ components:
     Format:
       name: format
       in: query
-      description: Requested image rendition.
+      description: Requested rendition on the legacy `image` field, for display presentations.
       schema: { $ref: "#/components/schemas/PresentationImageFormat" }
 
   responses:
     BadRequest:
-      description: The request is invalid.
+      description: |
+        The request is invalid — a malformed body, an out-of-range parameter, a
+        missing `Idempotency-Key`, or an unknown endpoint. `code` is
+        `invalid_request`, or `invalid_asset` for an asset that does not fit
+        the operation.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Unauthorized:
-      description: The PAT is missing, invalid, or revoked.
+      description: The PAT is missing, invalid, or revoked. `code` is `authentication_failed`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PaymentRequired:
+      description: |
+        The plan includes the feature, but a payment did not land. `code` is
+        `payment_required`; the way out is the billing portal, not checkout.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: |
-        The caller cannot use the resource. AI-backed modes return
-        `subscription_required` when the PAT owner does not have Pro.
+        `access_denied` when the token owner does not own the resource, or
+        `plan_upgrade_required` when the plan does not include the feature.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           examples:
-            subscriptionRequired:
+            planUpgradeRequired:
               value:
-                code: subscription_required
-                message: This inklet feature requires an active Pro subscription.
-                requestId: req_123
-                details: null
+                error:
+                  code: plan_upgrade_required
+                  message: this feature requires the pro plan
+                  requestId: req_123
+                  details:
+                    feature: ai_routing
+                    requiredTier: pro
+                    currentTier: free
     NotFound:
-      description: The requested resource does not exist or is not visible to the caller.
+      description: |
+        The resource does not exist or is not visible to the caller. `code` is
+        one of `display_not_found`, `content_not_found`,
+        `presentation_not_found`, `analysis_not_found`, or `archive_not_found`.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: The request conflicts with the current resource or idempotency state.
+      description: |
+        `idempotency_conflict` for a reused key with a different body,
+        `invalid_state` when an identical request is still in flight or the
+        resource cannot do this now, `asset_not_uploaded` when an analyzed
+        content still has assets missing, or `analysis_in_progress` when the
+        user is over the queued-analysis limit.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    NotDeliverable:
+      description: |
+        The presentation cannot go on that panel. `code` is
+        `presentation_not_deliverable`; branch on `details.reason`, never on
+        the message.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            notRendered:
+              value:
+                error:
+                  code: presentation_not_deliverable
+                  message: this presentation has no rendered image yet
+                  requestId: req_123
+                  details:
+                    displayId: display_123
+                    presentationId: presentation_456
+                    reason: not_rendered
     PayloadTooLarge:
-      description: An asset or request exceeds the supported limit.
+      description: An asset or request exceeds the supported limit. `code` is `asset_too_large`.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: |
+        `no_compatible_display` when an analysis with no target has no usable
+        display to route to, or `display_incompatible` when the named display
+        has no usable geometry.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            noCompatibleDisplay:
+              value:
+                error:
+                  code: no_compatible_display
+                  message: no compatible display is available
+                  requestId: req_123
     RateLimited:
-      description: Too many requests. Retry after the server-provided delay.
+      description: |
+        `rate_limited` for too many requests, or `quota_exceeded` when a plan
+        quota ran out. Retry after the server-provided delay.
       headers:
         Retry-After:
           schema: { type: string }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            quotaExceeded:
+              value:
+                error:
+                  code: quota_exceeded
+                  message: daily push quota exceeded
+                  requestId: req_123
+                  details:
+                    quota: pushes
+                    limit: 10
+                    used: 10
+                    resetAt: "2026-09-16T00:00:00Z"
+                    currentTier: free
 
   schemas:
-    ContentMode:
-      type: string
-      enum: [auto, manual, hardcode]
-    ContentState:
-      type: string
-      enum: [pending, processing, ready, failed]
-    ContentUploadStatus:
-      type: string
-      enum: [awaiting_upload, partial, complete]
-    ContentAssetUploadState:
-      type: string
-      enum: [pending, uploaded, failed]
-    ContentProcessingStage:
-      type: [string, "null"]
-      enum:
-        - awaiting_upload
-        - fetching_links
-        - summarizing
-        - routing
-        - creating_presentations
-        - complete
-        - failed
-        - null
-    PresentationState:
-      type: string
-      enum: [preparing, queued, published, confirmed, expired, failed]
-    PresentationImageFormat:
-      type: string
-      enum: [png, raw2, raw4]
-
     Error:
       type: object
-      required: [code, message]
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId:
+              type: string
+              description: Also returned in the `X-Request-Id` response header.
+            details:
+              type: object
+              additionalProperties: true
+              description: Omitted when there is nothing to report.
+
+    Page:
+      type: object
+      required: [nextCursor, hasMore]
+      properties:
+        nextCursor: { type: [string, "null"] }
+        hasMore: { type: boolean }
+
+    Problem:
+      type: object
+      required: [code, message, stage, retryable, assetIndex]
       properties:
         code: { type: string }
         message: { type: string }
-        requestId: { type: [string, "null"] }
-        details:
-          oneOf:
-            - type: object
-              additionalProperties: true
-            - type: "null"
+        stage: { type: [string, "null"] }
+        retryable: { type: boolean }
+        assetIndex: { type: [integer, "null"], minimum: 0 }
+
+    ContentRef:
+      type: object
+      description: One content behind a presentation, with the role it played.
+      required: [id, role]
+      properties:
+        id: { type: string }
+        role:
+          type: string
+          enum: [input, context]
+          description: |
+            `input` — the analysis named it. `context` — the agent retrieved it
+            from the user's history and used it.
+
+    ContentState:
+      type: string
+      enum: [pending, ready, failed]
+    ContentAssetUploadState:
+      type: string
+      enum: [pending, uploaded, failed]
+    AnalysisMode:
+      type: string
+      enum: [ai, direct]
+    AnalysisTrigger:
+      type: string
+      enum: [api, scheduled]
+    AnalysisState:
+      type: string
+      enum: [queued, running, completed, failed]
+    AnalysisOutcome:
+      type: string
+      enum: [presentations, no_change]
+    AnalysisContext:
+      type: string
+      enum: [submitted, history]
+    PresentationState:
+      type: string
+      description: |
+        `preparing` and `failed` apply to both kinds. `ready` is the terminal
+        state of a generated presentation; `queued`, `published`, `confirmed`,
+        and `expired` describe a display presentation's delivery.
+      enum: [preparing, ready, queued, published, confirmed, expired, failed]
+    PresentationImageFormat:
+      type: string
+      enum: [png, raw2, raw4]
+    PresentationColorMode:
+      type: string
+      enum: [color, grayscale, monochrome]
+    PresentationOutputFormat:
+      type: string
+      enum: [scene, png]
 
     DisplayCapabilities:
       type: object
@@ -552,9 +1073,13 @@ components:
           items: { type: string }
         syncIntervalMinutes: { type: [number, "null"], minimum: 0 }
         nextSyncAt: { type: [string, "null"], format: date-time }
-        currentPresentationId: { type: [string, "null"] }
+        currentPresentationId:
+          type: [string, "null"]
+          description: The frame the panel has confirmed it is showing.
         currentPresentationUpdatedAt: { type: [string, "null"], format: date-time }
-        pendingPresentationId: { type: [string, "null"] }
+        pendingPresentationId:
+          type: [string, "null"]
+          description: Handed over but not yet confirmed.
         capabilities: { $ref: "#/components/schemas/DisplayCapabilities" }
 
     DisplayPage:
@@ -569,16 +1094,15 @@ components:
 
     DisplayQueueItem:
       type: object
-      required: [id, displayId, contentIds, mode, state, createdAt, updatedAt]
+      required: [id, displayId, contentIds, analysisId, mode, state, createdAt, updatedAt]
       properties:
         id: { type: string }
         displayId: { type: string }
         contentIds:
           type: array
-          items: { type: string }
-        mode:
-          type: string
-          enum: ["", auto, manual, hardcode]
+          items: { $ref: "#/components/schemas/ContentRef" }
+        analysisId: { type: [string, "null"] }
+        mode: { $ref: "#/components/schemas/AnalysisMode" }
         state: { $ref: "#/components/schemas/PresentationState" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -614,68 +1138,47 @@ components:
         sizeBytes: { type: [integer, "null"], minimum: 0 }
         uploadState: { $ref: "#/components/schemas/ContentAssetUploadState" }
 
-    ContentUpload:
-      type: object
-      required: [status, failedAssetIndexes]
-      properties:
-        status: { $ref: "#/components/schemas/ContentUploadStatus" }
-        failedAssetIndexes:
-          type: array
-          items: { type: integer, minimum: 0 }
-
-    PresentationProblem:
-      type: object
-      required: [code, message, stage, retryable, assetIndex]
-      properties:
-        code: { type: string }
-        message: { type: string }
-        stage: { type: [string, "null"] }
-        retryable: { type: boolean }
-        assetIndex: { type: [integer, "null"], minimum: 0 }
-
-    ContentProcessing:
-      type: object
-      required: [stage, warnings, error]
-      properties:
-        stage: { $ref: "#/components/schemas/ContentProcessingStage" }
-        warnings:
-          type: array
-          items: { $ref: "#/components/schemas/PresentationProblem" }
-        error:
-          oneOf:
-            - $ref: "#/components/schemas/PresentationProblem"
-            - type: "null"
-
     Content:
       type: object
+      description: |
+        A content tracks one thing: whether its assets arrived. Processing
+        belongs to the analysis that references it.
       required:
         - id
-        - mode
-        - requestedDisplayId
-        - intent
         - title
         - state
         - assets
-        - upload
-        - processing
+        - failedAssetIndexes
+        - analysisIds
         - presentationIds
+        - failure
         - createdAt
         - updatedAt
       properties:
         id: { type: string }
-        mode: { $ref: "#/components/schemas/ContentMode" }
-        requestedDisplayId: { type: [string, "null"] }
-        intent: { type: [string, "null"] }
         title: { type: [string, "null"] }
         state: { $ref: "#/components/schemas/ContentState" }
         assets:
           type: array
           items: { $ref: "#/components/schemas/ContentAsset" }
-        upload: { $ref: "#/components/schemas/ContentUpload" }
-        processing: { $ref: "#/components/schemas/ContentProcessing" }
+        failedAssetIndexes:
+          type: array
+          items: { type: integer, minimum: 0 }
+        analysisIds:
+          type: array
+          description: |
+            Analyses that named this content in `contentIds`, oldest first. An
+            analysis that only picked it up from history as context is not
+            counted.
+          items: { type: string }
         presentationIds:
           type: array
+          description: Presentations that include this content as an input, oldest first.
           items: { type: string }
+        failure:
+          oneOf:
+            - $ref: "#/components/schemas/Problem"
+            - type: "null"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -721,6 +1224,7 @@ components:
           type: string
           enum: [application/pdf, text/plain, text/markdown, application/json]
         sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+
     CreateContentAssetInput:
       oneOf:
         - $ref: "#/components/schemas/ContentTextInput"
@@ -731,75 +1235,22 @@ components:
         propertyName: type
 
     CreateContentRequest:
-      oneOf:
-        - $ref: "#/components/schemas/CreateAutoContentRequest"
-        - $ref: "#/components/schemas/CreateManualContentRequest"
-        - $ref: "#/components/schemas/CreateHardcodeContentRequest"
-      discriminator:
-        propertyName: mode
-        mapping:
-          auto: "#/components/schemas/CreateAutoContentRequest"
-          manual: "#/components/schemas/CreateManualContentRequest"
-          hardcode: "#/components/schemas/CreateHardcodeContentRequest"
-
-    CreateAutoContentRequest:
       type: object
-      required: [mode, assets]
+      description: |
+        Binary assets are declared by metadata only — the bytes go to the
+        presigned upload ticket returned with the response.
+      required: [assets]
       properties:
-        mode: { const: auto }
-        displayId:
-          type: "null"
-          description: Omit this field or send null; inklet chooses the display.
-        intent: { type: [string, "null"] }
         title: { type: [string, "null"] }
         assets:
           type: array
           minItems: 1
           maxItems: 50
           items: { $ref: "#/components/schemas/CreateContentAssetInput" }
-
-    CreateManualContentRequest:
-      type: object
-      required: [mode, displayId, assets]
-      properties:
-        mode: { const: manual }
-        displayId: { type: string, minLength: 1 }
-        intent: { type: [string, "null"] }
-        title: { type: [string, "null"] }
-        assets:
-          type: array
-          minItems: 1
-          maxItems: 50
-          items: { $ref: "#/components/schemas/CreateContentAssetInput" }
-
-    CreateHardcodeContentRequest:
-      type: object
-      description: The image is scaled server-side to the target display geometry.
-      required: [mode, displayId, assets]
-      properties:
-        mode: { const: hardcode }
-        displayId: { type: string, minLength: 1 }
-        intent: { type: [string, "null"] }
-        title: { type: [string, "null"] }
-        assets:
-          type: array
-          minItems: 1
-          maxItems: 1
-          items: { $ref: "#/components/schemas/HardcodeImageInput" }
-
-    HardcodeImageInput:
-      type: object
-      required: [type, filename, contentType, sizeBytes]
-      properties:
-        type: { const: image }
-        filename: { type: string, minLength: 1 }
-        contentType:
-          type: string
-          enum: [image/png, image/jpeg]
-        sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
 
     UploadTicket:
       type: object
+      description: A presigned form POST. Never send the PAT to this URL.
       required: [assetIndex, url, fields, expiresAt]
       properties:
         assetIndex: { type: integer, minimum: 0 }
@@ -816,10 +1267,305 @@ components:
         content: { $ref: "#/components/schemas/Content" }
         uploadTickets:
           type: array
+          description: Binary assets only. Text and link assets carry their payload inline.
           items: { $ref: "#/components/schemas/UploadTicket" }
+
+    Viewport:
+      type: object
+      required: [width, height]
+      properties:
+        width: { type: integer, minimum: 1, maximum: 8192 }
+        height: { type: integer, minimum: 1, maximum: 8192 }
+
+    OutputRequest:
+      type: object
+      description: |
+        Requested output for a display-free result. `preset` and `viewport` are
+        mutually exclusive; `formats` defaults to both.
+      properties:
+        formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/PresentationOutputFormat" }
+        preset: { type: string, minLength: 1 }
+        viewport: { $ref: "#/components/schemas/Viewport" }
+        colorMode: { $ref: "#/components/schemas/PresentationColorMode" }
+
+    OutputProfile:
+      type: object
+      description: The normalized output profile inklet persisted.
+      required: [formats, preset, viewport, colorMode]
+      properties:
+        formats:
+          type: array
+          items: { $ref: "#/components/schemas/PresentationOutputFormat" }
+        preset: { type: [string, "null"] }
+        viewport: { $ref: "#/components/schemas/Viewport" }
+        colorMode: { $ref: "#/components/schemas/PresentationColorMode" }
+        pixelRatio:
+          type: integer
+          minimum: 1
+          description: Output pixels per viewport unit in the initial PNG rendition.
+
+    AnalysisTarget:
+      type: object
+      description: Exactly one of the three. Omit the whole object to let the agent choose.
+      properties:
+        displayId: { type: string, minLength: 1 }
+        displayIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        output: { $ref: "#/components/schemas/OutputRequest" }
+
+    AnalysisScope:
+      type: object
+      required: [since, sinceAt]
+      properties:
+        since:
+          type: [string, "null"]
+          pattern: "^\\d+[mhd]$"
+          description: The requested look-back window, echoed back unchanged.
+        sinceAt:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            The absolute start resolved at creation. The plan's history depth
+            clamps this rather than rejecting the request, so it can be later
+            than `since` asked for.
+
+    CreateAnalysisRequest:
+      type: object
+      properties:
+        mode:
+          allOf: [{ $ref: "#/components/schemas/AnalysisMode" }]
+          default: ai
+          description: |
+            `direct` requires exactly one `contentId` holding one PNG or JPEG,
+            `context: "submitted"`, and an explicit `target`.
+        contentIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        context:
+          allOf: [{ $ref: "#/components/schemas/AnalysisContext" }]
+          description: |
+            Defaults to `submitted` when `contentIds` is non-empty, `history`
+            when it is empty. `submitted` with no `contentIds` is rejected.
+        scope:
+          type: object
+          description: "Only valid with `context: history`."
+          properties:
+            since: { type: string, pattern: "^\\d+[mhd]$" }
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        target:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisTarget"
+            - type: "null"
+
+    Analysis:
+      type: object
+      required:
+        - id
+        - mode
+        - trigger
+        - state
+        - outcome
+        - noChangeReason
+        - contentIds
+        - context
+        - scope
+        - intent
+        - title
+        - target
+        - presentationIds
+        - failure
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        mode: { $ref: "#/components/schemas/AnalysisMode" }
+        trigger: { $ref: "#/components/schemas/AnalysisTrigger" }
+        state: { $ref: "#/components/schemas/AnalysisState" }
+        outcome:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisOutcome"
+            - type: "null"
+          description: |
+            `null` until the run finishes. `no_change` is a normal completion
+            and only reachable when no `contentIds` were named.
+        noChangeReason: { type: [string, "null"] }
+        contentIds:
+          type: array
+          items: { type: string }
+        context: { $ref: "#/components/schemas/AnalysisContext" }
+        scope:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisScope"
+            - type: "null"
+        intent: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        target:
+          oneOf:
+            - type: object
+              properties:
+                displayId: { type: string }
+                displayIds:
+                  type: array
+                  items: { type: string }
+                output: { $ref: "#/components/schemas/OutputProfile" }
+            - type: "null"
+          description: "`null` means the agent chose, or will choose, the displays."
+        presentationIds:
+          type: array
+          items: { type: string }
+        failure:
+          oneOf:
+            - $ref: "#/components/schemas/Problem"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AnalysisPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Analysis" }
+
+    AnalysisEventType:
+      type: string
+      description: |
+        The closed set a public read returns. Treat it as open when parsing: a
+        new type must not break a client that has never seen it.
+      enum:
+        - analysis.created
+        - analysis.dispatched
+        - analysis.leased
+        - analysis.lease_expired
+        - analysis.completed
+        - analysis.failed
+        - context.materialized
+        - agent.activity
+        - plan.submitted
+        - plan.rejected
+        - plan.accepted
+        - render.finished
+        - render.failed
+        - delivery.published
+        - delivery.confirmed
+        - delivery.failed
+
+    AgentActivityData:
+      type: object
+      description: |
+        One run of related agent steps, coalesced. The same activity is
+        re-emitted as it progresses — throttled `active` updates, then `done`
+        or `failed` — so upsert by `attempt` and `activityId` together.
+        `activityId` restarts at `a1` on every attempt.
+      required: [activityId, kind, state, steps]
+      properties:
+        activityId: { type: string }
+        kind:
+          type: string
+          enum:
+            - reading_brief
+            - reading_notes
+            - checking_display
+            - choosing_layout
+            - submitting_plan
+            - retrying
+            - other
+        state: { type: string, enum: [active, done, failed] }
+        steps: { type: integer, minimum: 0 }
+        stats:
+          type: object
+          description: Every counter is omitted rather than sent as `0` when it does not apply.
+          properties:
+            notesRead: { type: integer, minimum: 0 }
+            layoutsSeen: { type: integer, minimum: 0 }
+            chosen: { type: [string, "null"] }
+            failedSteps: { type: integer, minimum: 0 }
+            deniedSteps: { type: integer, minimum: 0 }
+
+    PlanRejectedData:
+      type: object
+      description: |
+        A rejected plan is not a failed run — the agent corrects it and submits
+        again. The problem sentences themselves are not public; the count and
+        the class are.
+      required: [problems, reason, attempt]
+      properties:
+        problems: { type: integer, minimum: 0 }
+        reason:
+          type: string
+          enum: [target, layout_mismatch, content_refs, schema, other]
+        attempt: { type: integer, minimum: 0 }
+
+    AnalysisEvent:
+      type: object
+      required: [seq, at, attempt, source, type, level, summary, data]
+      properties:
+        seq:
+          type: integer
+          minimum: 1
+          description: |
+            Monotonic per analysis and the value to pass back as `after`. Not
+            contiguous — a public read skips the numbers it does not return.
+        at:
+          type: string
+          format: date-time
+          description: UTC with millisecond precision.
+        attempt:
+          type: integer
+          minimum: 0
+          description: Which execution attempt produced the event; a retry restarts the agent.
+        source: { type: string, enum: [agent, backend] }
+        type: { $ref: "#/components/schemas/AnalysisEventType" }
+        level: { type: string, enum: [info, warn, error] }
+        visibility:
+          const: public
+          description: Always `public` on this endpoint.
+        summary:
+          type: string
+          description: A displayable one-line English summary. There is no locale option.
+        data:
+          type: object
+          additionalProperties: true
+          description: |
+            Type-specific fields. `agent.activity` carries `AgentActivityData`
+            and `plan.rejected` carries `PlanRejectedData`; the others carry
+            counts and identifiers — `analysis.completed` has `outcome` and
+            `presentations`, `plan.accepted` has `presentationIds` and
+            `actions`, `context.materialized` has `contents`, `history`,
+            `displays`, and `templates`, and `render.*` and `delivery.*` name
+            the presentation and display involved. No payload carries model
+            text or tool-level detail.
+
+    AnalysisEventPage:
+      type: object
+      required: [items, nextAfter, hasMore, state]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AnalysisEvent" }
+        nextAfter:
+          type: [integer, "null"]
+          description: Pass back as `after` to read the next page; `null` at the end.
+        hasMore: { type: boolean }
+        state:
+          allOf: [{ $ref: "#/components/schemas/AnalysisState" }]
+          description: The analysis state when the page was produced.
 
     PresentationImage:
       type: object
+      description: The legacy single-image view, kept for display presentations.
       required: [url, format, width, height, expiresAt, updatedAt]
       properties:
         url: { type: string, format: uri }
@@ -829,42 +1575,142 @@ components:
         expiresAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    Rendition:
+      type: object
+      required: [id, mediaType, format, width, height, colorMode, state, url, updatedAt]
+      properties:
+        id: { type: string }
+        mediaType: { const: image/png }
+        format: { const: png }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        colorMode: { $ref: "#/components/schemas/PresentationColorMode" }
+        state: { type: string, enum: [preparing, ready, failed] }
+        url:
+          type: [string, "null"]
+          format: uri
+          description: A short-lived read link, minted per response. `null` until the render lands.
+        expiresAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+        failure:
+          oneOf:
+            - $ref: "#/components/schemas/Problem"
+            - type: "null"
+
+    SceneElement:
+      type: object
+      required: [id, type, frame, properties]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [text, image, shape] }
+        frame:
+          type: object
+          required: [x, y, width, height]
+          properties:
+            x: { type: integer }
+            y: { type: integer }
+            width: { type: integer, minimum: 1 }
+            height: { type: integer, minimum: 1 }
+        properties:
+          type: object
+          additionalProperties: true
+          description: Element-specific styling, so a new option needs no new SDK release.
+
+    Scene:
+      type: object
+      description: The versioned scene document. A v1 renderer must handle every element type.
+      required: [mediaType, version, data]
+      properties:
+        mediaType: { const: "application/vnd.inklet.scene+json;version=1" }
+        version: { const: 1 }
+        data:
+          type: object
+          required: [version, viewport, background, elements]
+          properties:
+            version: { const: 1 }
+            viewport: { $ref: "#/components/schemas/Viewport" }
+            background: { type: string }
+            elements:
+              type: array
+              items: { $ref: "#/components/schemas/SceneElement" }
+
     Presentation:
       type: object
+      description: |
+        One finished result. A display presentation has a `displayId` and an
+        `image`; a generated one has `null` there and carries `scene` and
+        `renditions` instead.
       required:
         - id
         - displayId
         - contentIds
+        - analysisId
         - mode
+        - title
         - state
+        - output
+        - scene
+        - renditions
         - image
         - failure
         - createdAt
         - updatedAt
       properties:
         id: { type: string }
-        displayId: { type: string }
+        displayId: { type: [string, "null"] }
         contentIds:
           type: array
-          items: { type: string }
-        mode:
-          type: string
-          enum: ["", auto, manual, hardcode]
+          description: "`input` refs first, in the order the analysis named them, then `context`."
+          items: { $ref: "#/components/schemas/ContentRef" }
+        analysisId: { type: [string, "null"] }
+        mode: { $ref: "#/components/schemas/AnalysisMode" }
+        title:
+          type: [string, "null"]
+          description: |
+            What this frame is called in a display's history, resolved when the
+            plan was accepted: the plan's own title, else the template's title
+            parameter, else the first input content's title or an excerpt of
+            its text, else the analysis title or the template name.
         state: { $ref: "#/components/schemas/PresentationState" }
+        output:
+          oneOf:
+            - $ref: "#/components/schemas/OutputProfile"
+            - type: "null"
+        scene:
+          oneOf:
+            - $ref: "#/components/schemas/Scene"
+            - type: "null"
+        renditions:
+          type: array
+          description: Always an array; empty for a display presentation.
+          items: { $ref: "#/components/schemas/Rendition" }
         image:
           oneOf:
             - $ref: "#/components/schemas/PresentationImage"
             - type: "null"
         failure:
           oneOf:
-            - $ref: "#/components/schemas/PresentationProblem"
+            - $ref: "#/components/schemas/Problem"
             - type: "null"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
-    Page:
-      type: object
-      required: [nextCursor, hasMore]
-      properties:
-        nextCursor: { type: [string, "null"] }
-        hasMore: { type: boolean }
+    PresentationPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [items, historyWindowStart]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Presentation" }
+            historyWindowStart:
+              type: [string, "null"]
+              format: date-time
+              description: |
+                How far back this list was allowed to see. Display
+                presentations created before it are left out rather than the
+                request being refused. `null` when nothing was clipped — an
+                unlimited plan, or `scope=generated`, which has no display
+                half. Nothing is deleted: the hidden rows return on the same
+                call after an upgrade.

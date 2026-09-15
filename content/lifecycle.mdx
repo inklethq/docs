@@ -1,124 +1,158 @@
 ---
 title: Lifecycle
-description: Content and Presentation states in the inklet SDK, how to poll for a finished render, and how idempotency keys make a push safe to replay.
+description: How a submission becomes a frame on the wall — Content, Analysis, and Presentation states, what to poll, what to watch, and how idempotency keys make a call safe to replay.
 ---
 
 
 A push is a request, not a render. The call returns as soon as inklet has your
-assets; summarising, routing, and rendering happen after — and a display only
+assets; reading, planning, and rendering happen after — and a display only
 shows the result once it wakes and confirms it.
 
 This page is the difference between "the call succeeded" and "it is on the wall".
 
+## Three objects, in order
+
+```text
+Content  ──→  Analysis  ──→  Presentation  ──→  the panel
+(storage)     (the work)     (the result)       (delivery)
+```
+
+| Object | What it tracks |
+| --- | --- |
+| [Content](/api/contents) | Whether your assets reached storage. Nothing more. |
+| [Analysis](/api/analyses) | The agent run: reading, planning, rendering, delivering. |
+| [Presentation](/api/presentations) | One finished frame, and where it is in the delivery queue. |
+
+Uploading spends nothing. A Content sits in storage until an Analysis
+references it, which is the call that actually does work.
+
 ## Content states
 
 ```text
-pending ──→ processing ──→ ready
-                       └─→ failed
+pending ──→ ready
+        └─→ failed
 ```
 
 | State | Meaning |
 | --- | --- |
-| `pending` | Created; assets not yet confirmed. |
-| `processing` | Confirmed and working. This is the normal state right after a push. |
-| `ready` | Finished. `presentationIds` is populated and persisted. |
-| `failed` | Gave up. `processing.error` explains why. |
+| `pending` | Assets are not all confirmed in storage yet. |
+| `ready` | Every asset is stored. |
+| `failed` | Ingestion gave up; `content.failure` explains why. |
 
-### Processing stages
+Text and link Contents are `ready` immediately. Binary assets are `pending`
+until inklet has verified the uploads.
 
-While `processing`, `content.processing.stage` reports where it is:
+<Callout>
+  You usually do not need to wait for this. `inklet.analyze()` verifies pending
+  uploads itself, so uploading and analyzing back to back is fine. A Content
+  whose upload window closed fails with `failure.code` of `upload_expired`, and
+  [`refreshUploadTickets()`](/api/contents#refreshuploadtickets) puts it back to
+  `pending`.
+</Callout>
+
+## Analysis states
 
 ```text
-awaiting_upload → fetching_links → summarizing → routing → creating_presentations → complete
+queued ──→ running ──→ completed
+                   └─→ failed
 ```
 
-A stage of `failed` accompanies the `failed` state. These are for observability
-— log them, show them in a dashboard — not for control flow. Branch on `state`.
+| State | Meaning |
+| --- | --- |
+| `queued` | Accepted and waiting for a worker. |
+| `running` | A worker holds it. |
+| `completed` | Finished. Read `outcome`. |
+| `failed` | Gave up. `analysis.failure` explains why. |
+
+`completed` has two outcomes. `presentations` means `presentationIds` is
+populated; `no_change` means the agent looked and decided nothing was worth
+showing, with `noChangeReason` saying why. `no_change` is only reachable when
+the Analysis named no `contentIds` — name a Content and inklet either covers it
+or fails the Analysis with `no_presentable_content`.
+
+<Callout type="warn">
+  `queued` can last a while. Analyses with `context: "history"` run one at a
+  time per user, and scheduled ones queue behind them. A retried attempt does
+  not leave `running` either: an `analysis.lease_expired` event is followed by
+  another `analysis.leased` with `attempt + 1`.
+</Callout>
 
 ## Presentation states
 
-A Presentation is one rendered frame for one display.
+The two kinds of Presentation use two vocabularies. A **generated**
+Presentation has no panel, so most of the delivery words do not apply to it.
 
 ```text
-preparing ──→ queued ──→ published ──→ confirmed
-                                   └─→ expired
-                                   └─→ failed
+generated:  preparing ──→ ready
+                      └─→ failed
+
+display:    preparing ──→ queued ──→ published ──→ confirmed
+                                               └─→ expired
+                                               └─→ failed
 ```
 
-| State | Meaning |
-| --- | --- |
-| `preparing` | Render worker is producing the PNG, RAW2, and RAW4 files. |
-| `queued` | Rendered and waiting for the display to ask for work. |
-| `published` | Handed to the display. |
-| `confirmed` | The display reported it is showing this frame. |
-| `expired` | Superseded or timed out before it was shown. |
-| `failed` | Rendering or delivery failed; see `presentation.failure`. |
+| State | Kind | Meaning |
+| --- | --- | --- |
+| `preparing` | both | The render is still being produced. |
+| `ready` | generated | The Scene and its renditions are durable. |
+| `queued` | display | Waiting for the display to ask for work. |
+| `published` | display | Handed to the display. |
+| `confirmed` | display | The display reported it is showing this frame. |
+| `expired` | display | Superseded, or replaced on the panel. |
+| `failed` | both | Rendering or delivery failed; see `failure`. |
 
 <Callout type="warn">
-  A `ready` Content means its Presentation IDs are **persisted**, not that every
-  frame is rendered. An individual Presentation can still be `preparing` for a
-  moment after that. If you need the image bytes, poll the Presentation too.
+  A `completed` Analysis means its Presentation IDs are **persisted**, not that
+  every frame is rendered and delivered. Rendering and delivery run after the
+  Analysis reaches a terminal state. If you need the image bytes, read the
+  Presentation too.
 </Callout>
 
-## Polling
+## Waiting for it
 
 <div className="fd-steps [&_h3]:fd-step">
 
-### Wait for the Content
+### Wait for the Analysis
 
 ```ts
-const result = await inklet.push.auto({ assets });
+const analysis = await inklet.analyze({ contentIds: [content.id] });
 
-let content = await inklet.contents.retrieve(result.contentId);
+const done = await inklet.analyses.wait(analysis, { timeoutMs: 120_000 });
 
-while (content.state === "processing" || content.state === "pending") {
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  content = await inklet.contents.retrieve(content.id);
-}
-
-if (content.state === "failed") {
-  throw new Error(content.processing.error?.message ?? "push failed");
+if (done.outcome === "no_change") {
+  console.log("nothing worth showing:", done.noChangeReason);
+} else {
+  console.log("presentations:", done.presentationIds);
 }
 ```
+
+`wait()` throws `AnalysisFailedError` when the Analysis itself failed; the
+backend code is on `error.details.backendCode`. A timeout throws
+`OperationTimeoutError` and does **not** cancel the run.
 
 ### Wait for the frame, if you need it
 
 ```ts
-for (const id of content.presentationIds) {
-  let presentation = await inklet.presentations.retrieve(id, { format: "png" });
+for (const id of done.presentationIds) {
+  const presentation = await inklet.presentations.retrieve(id, { format: "png" });
+  const url = presentation.renditions[0]?.url ?? presentation.image?.url;
 
-  while (presentation.state === "preparing") {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    presentation = await inklet.presentations.retrieve(id, { format: "png" });
-  }
-
-  if (presentation.image) {
-    console.log(presentation.image.url, presentation.image.expiresAt);
-  }
+  if (url) console.log(url);
 }
+```
+
+For a display-free Presentation, `presentations.waitUntilReady(generation)`
+does the waiting and returns the one Presentation.
+
+### Wait for the panel, if it matters
+
+```ts
+await inklet.displays.waitUntilCurrent(display.id, presentationId, {
+  timeoutMs: 10 * 60_000,
+});
 ```
 
 </div>
-
-A production poller should add a ceiling and back off rather than looping at a
-fixed interval forever:
-
-```ts
-async function waitForContent(contentId: string, timeoutMs = 60_000) {
-  const deadline = Date.now() + timeoutMs;
-  let delay = 500;
-
-  while (Date.now() < deadline) {
-    const content = await inklet.contents.retrieve(contentId);
-    if (content.state === "ready" || content.state === "failed") return content;
-
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    delay = Math.min(delay * 2, 5_000);
-  }
-
-  throw new Error(`Content ${contentId} did not settle in ${timeoutMs}ms`);
-}
-```
 
 <Callout>
   A display shows a frame when it next wakes, which depends on its
@@ -127,15 +161,45 @@ async function waitForContent(contentId: string, timeoutMs = 60_000) {
   to expect it.
 </Callout>
 
-## Idempotency
+## Watching instead of polling
 
-Every push carries an idempotency key. If you omit it, the SDK generates one
-and returns it in the result:
+Every Analysis publishes an ordered event stream while it works, and `watch()`
+ends on its own once the run is terminal:
 
 ```ts
+import { describeEvent } from "@inklethq/sdk";
+
+for await (const event of inklet.analyses.watch(analysis.id)) {
+  console.log(describeEvent(event));
+}
+```
+
+The stream is a progress report, not the run's log: what the agent was given,
+what it is working on, what it planned, and how the result was rendered and
+delivered. Individual tool calls and model text are not part of it.
+
+<Cards>
+  <Card title="Analysis events" href="/api/events">
+    The closed set of event types, their payloads, and how to merge them.
+  </Card>
+</Cards>
+
+## Idempotency
+
+`POST /contents` and `POST /analyses` both **require** an `Idempotency-Key`
+header. The SDK generates one when you do not supply it, and returns the key it
+used:
+
+```ts
+const { content, idempotencyKey } = await inklet.contents.upload({ assets });
 const result = await inklet.push.auto({ assets });
+
 console.log(result.idempotencyKey); // "sdk-4f3c…"
 ```
+
+`push.*` and `presentations.generate()` reuse one key for both the Content and
+the Analysis they start from it. The two endpoints keep separate key
+namespaces, so the same string means two different things on each.
 
 To make your own retries safe, supply and reuse your own key:
 
@@ -147,7 +211,16 @@ await inklet.push.auto({ idempotencyKey: key, assets }); // same push, not a sec
 ```
 
 Keys must be **8–128 printable ASCII characters with no spaces**. Anything else
-throws a `ConfigurationError`.
+throws a `ConfigurationError` locally, and would be a `400` at the service.
+
+| Situation | What happens |
+| --- | --- |
+| Same key, same body, finished | The original response is replayed verbatim. Nothing new is created. |
+| Same key, same body, still in flight | `409` `invalid_state` — the first call has not answered yet. |
+| Same key, different body | `409` `idempotency_conflict`. |
+| Same key after a rejected request | A fresh request. A `4xx` releases the key rather than burning it. |
+
+Keys are remembered for 24 hours.
 
 <Callout>
   A generated key is only useful if you keep it. If you plan to retry, pass your
@@ -155,15 +228,16 @@ throws a `ConfigurationError`.
   or a job id.
 </Callout>
 
-## Uploads, retries, and partial content
+## Uploads, retries, and missing assets
 
-For binary assets, `push.*` does more than one round trip:
+For binary assets, `contents.upload()` — and therefore `push.*` — does more
+than one round trip:
 
 <div className="fd-steps [&_h3]:fd-step">
 
 ### Create
 
-The Content is created and the backend returns one presigned upload ticket per
+The Content is created and the service returns one presigned upload ticket per
 binary asset.
 
 ### Upload
@@ -175,11 +249,6 @@ not attached to these requests.
 
 If any upload fails, the SDK requests fresh tickets for exactly the failed
 assets and retries them once.
-
-### Confirm
-
-The Content is confirmed. If it comes back `partial`, the SDK refreshes and
-retries the still-missing assets once more, then confirms again.
 
 </div>
 

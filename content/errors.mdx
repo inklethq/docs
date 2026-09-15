@@ -1,11 +1,11 @@
 ---
 title: Errors
-description: The inklet SDK error hierarchy — every class, its code, and what to do when you catch it.
+description: The inklet SDK error hierarchy and the service error codes behind it — every class, every code, and what to do when you catch one.
 ---
 
 
 Every error the SDK produces extends `InkletError`, which preserves the
-backend's own code, the HTTP status, a request ID, and any structured details.
+service's own code, the HTTP status, a request ID, and any structured details.
 
 ```ts
 class InkletError extends Error {
@@ -30,7 +30,8 @@ catch (error) {
 
 <Callout>
   `requestId` can be handed to inklet support without exposing anything secret.
-  It is the fastest way to have a specific failure looked up.
+  It is the fastest way to have a specific failure looked up, and the service
+  returns it in the `X-Request-Id` header on every response.
 </Callout>
 
 ## Hierarchy
@@ -51,10 +52,18 @@ Error
     ├── PayloadTooLargeError        payload_too_large
     ├── RateLimitError              rate_limited
     ├── AssetUploadError            asset_upload_failed
+    ├── AnalysisFailedError         analysis_failed
+    ├── NoChangeError               analysis_no_change
+    ├── OperationTimeoutError       operation_timed_out
+    ├── OperationAbortedError       operation_aborted
     ├── ApiError                    api_error
     ├── InvalidResponseError        invalid_response
     └── NetworkError                network_error
 ```
+
+The codes above are the SDK's own defaults. For anything the service answered,
+**`error.code` carries the service's code**, not the default — a `403` from the
+plan gate is a `PermissionDeniedError` whose `code` is `plan_upgrade_required`.
 
 ## Thrown locally, before any request
 
@@ -65,20 +74,159 @@ Error
 
 These are programming errors. Retrying will not help.
 
-## Returned by the API
+## Mapped from the HTTP status
 
-| Status | Class | Typical cause |
+| Status | Class |
+| --- | --- |
+| 401 | `AuthenticationFailedError`, `RevokedSecretKeyError`, or `InvalidSecretKeyError` |
+| 403 | `PermissionDeniedError` — or `SubscriptionRequiredError` when the code says so |
+| 404 | `NotFoundError` |
+| 409 | `ConflictError` |
+| 413 | `PayloadTooLargeError` |
+| 429 | `RateLimitError` |
+| anything else | `ApiError` |
+
+So a `402` or a `422` reaches you as an `ApiError` with the service's code and
+status intact. Branch on `error.code` for those.
+
+## Service error codes
+
+The service answers with one envelope everywhere:
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "…",
+    "requestId": "req_…",
+    "details": {}
+  }
+}
+```
+
+`details` is omitted when there is nothing to put in it.
+
+| Status | `code` | Typical cause |
 | --- | --- | --- |
-| 401 | `AuthenticationFailedError` | Token invalid or inactive |
-| 401 | `RevokedSecretKeyError` | Token revoked |
-| 401 | `InvalidSecretKeyError` | 401 with no more specific code |
-| 403 | `PermissionDeniedError` | Valid token, wrong scope |
-| 403 | `SubscriptionRequiredError` | Valid token, but the requested AI feature requires Pro |
-| 404 | `NotFoundError` | Unknown display, content, or presentation |
-| 409 | `ConflictError` | Idempotency key reused with a different payload |
-| 413 | `PayloadTooLargeError` | Request body over the server limit |
-| 429 | `RateLimitError` | Rate limit exceeded |
-| other | `ApiError` | Anything else non-2xx |
+| 400 | `invalid_request` | A malformed body, an out-of-range parameter, a missing `Idempotency-Key`, or an unknown endpoint |
+| 400 | `invalid_asset` | A `direct` Analysis whose Content is not exactly one PNG or JPEG |
+| 401 | `authentication_failed` | The token is missing, invalid, or revoked |
+| 402 | `payment_required` | The subscription exists but its payment did not land |
+| 403 | `plan_upgrade_required` | The plan does not include this feature |
+| 403 | `access_denied` | The token owner does not own that resource |
+| 404 | `display_not_found` · `content_not_found` · `presentation_not_found` · `analysis_not_found` | Unknown id, or one belonging to someone else |
+| 404 | `archive_not_found` | The Analysis has no run archive |
+| 409 | `idempotency_conflict` | The key was already used with a different body |
+| 409 | `invalid_state` | An identical request is still in flight, or the resource cannot do this now |
+| 409 | `asset_not_uploaded` | An analyzed Content still has assets missing |
+| 409 | `analysis_in_progress` | The user is over the queued-Analysis limit |
+| 409 | `presentation_not_deliverable` | That Presentation cannot go on that panel |
+| 413 | `asset_too_large` | An asset exceeds the supported size |
+| 422 | `no_compatible_display` | A targetless Analysis with no usable display on the account |
+| 422 | `display_incompatible` | The named display has no usable geometry |
+| 429 | `quota_exceeded` | A plan quota ran out; `details` carries `quota`, `limit`, `used`, `resetAt` |
+| 429 | `rate_limited` | Too many requests; retry after `Retry-After` |
+| 500 | `internal_error` | Something went wrong on our side |
+| 503 | `processing_unavailable` | A dependency is not available on this deployment |
+
+### `422 no_compatible_display`
+
+`POST /analyses` refuses **synchronously** when you give no `target` and the
+account has no display the agent could route to:
+
+```ts
+try {
+  await inklet.analyze({ contentIds: [content.id] });
+} catch (error) {
+  if (error instanceof ApiError && error.code === "no_compatible_display") {
+    // Bind a display, or pass an { output } target instead.
+  }
+}
+```
+
+It is raised before any quota is reserved and before the Analysis row is
+written, and the idempotency key is released — so the same key works again once
+a display is bound.
+
+### `409 presentation_not_deliverable`
+
+Returned by [`displays.setCurrent()`](/api/displays#setcurrent) when the
+Presentation cannot go on that panel. `details` is
+`{ displayId, reason, presentationId }`:
+
+| `reason` | Meaning |
+| --- | --- |
+| `targetless` | The Presentation has no target display at all. |
+| `not_delivered` | It was never delivered to any display. |
+| `other_display` | It was delivered to a different panel. |
+| `not_rendered` | It has no rendered image yet. |
+
+Branch on `details.reason`, never on the message.
+
+### Idempotency conflicts
+
+```ts
+if (error instanceof ConflictError) {
+  if (error.code === "idempotency_conflict") {
+    // Same key, different body. Pick a new key or send the original body.
+  }
+  if (error.code === "invalid_state") {
+    // The first call with this key has not answered yet. Wait and re-read.
+  }
+}
+```
+
+See [Idempotency](/lifecycle#idempotency).
+
+## Plan and quota refusals
+
+```ts
+import { ApiError, PermissionDeniedError, RateLimitError } from "@inklethq/sdk";
+
+try {
+  await inklet.push.auto({ assets });
+} catch (error) {
+  if (error instanceof PermissionDeniedError && error.code === "plan_upgrade_required") {
+    // Upgrade in the inklet portal, then retry with the same PAT.
+  }
+  if (error instanceof ApiError && error.code === "payment_required") {
+    // The card needs attention in the billing portal.
+  }
+  if (error instanceof RateLimitError && error.code === "quota_exceeded") {
+    // error.details: { quota, limit, used, resetAt, currentTier }
+  }
+}
+```
+
+`details` on a plan refusal carries `feature`, `requiredTier`, `currentTier`,
+and `status`. None of these are transient: retrying before the plan changes will
+not help. See [Plans](/plans).
+
+<Callout>
+  `SubscriptionRequiredError` is the `PermissionDeniedError` subclass for a
+  service code of `subscription_required`. inklet Cloud answers plan refusals
+  with `plan_upgrade_required` and `payment_required` today, so catch
+  `PermissionDeniedError` and branch on `error.code` rather than on the
+  subclass.
+</Callout>
+
+## Analysis outcomes that throw
+
+| Class | When |
+| --- | --- |
+| `AnalysisFailedError` | `analyses.wait()` found the Analysis `failed`. `details` has `stage`, `retryable`, `backendCode`, and `analysisId`. |
+| `NoChangeError` | `presentations.waitUntilReady()` was handed an Analysis that completed as `no_change`. `details` has `analysisId` and `reason`. |
+
+`NoChangeError` is not a failure of the service — it is a normal completion
+that the caller required a Presentation from. It is only reachable for an
+Analysis that named no `contentIds`.
+
+## Waiting, aborting, and timing out
+
+| Class | When |
+| --- | --- |
+| `OperationTimeoutError` | A `wait*` helper ran out of `timeoutMs`. The work is **not** cancelled. |
+| `OperationAbortedError` | The `AbortSignal` you passed fired. |
 
 ## Transport and parsing
 
@@ -107,7 +255,7 @@ class AssetUploadError extends InkletError {
 import { AssetUploadError } from "@inklethq/sdk";
 
 try {
-  await inklet.push.manual({ displayId, assets });
+  await inklet.contents.upload({ assets });
 } catch (error) {
   if (error instanceof AssetUploadError) {
     for (const index of error.failedAssetIndexes) {
@@ -127,8 +275,8 @@ import {
   ConfigurationError,
   InkletError,
   NetworkError,
+  PermissionDeniedError,
   RateLimitError,
-  SubscriptionRequiredError,
 } from "@inklethq/sdk";
 
 async function push() {
@@ -144,9 +292,9 @@ async function push() {
       throw error;
     }
 
-    if (error instanceof SubscriptionRequiredError) {
-      await alertOperator("upgrade or manage the inklet subscription");
-      throw error; // not transient; keep the same PAT after the plan changes
+    if (error instanceof PermissionDeniedError) {
+      await alertOperator(`inklet refused: ${error.code}`);
+      throw error; // not transient; the plan has to change first
     }
 
     if (error instanceof RateLimitError || error instanceof NetworkError) {

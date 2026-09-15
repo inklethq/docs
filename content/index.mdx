@@ -30,7 +30,7 @@ await inklet.push.auto({
   browser bundle by accident. See [Authentication](/authentication).
 </Callout>
 
-## The four nouns
+## The five nouns
 
 Everything in the API is one of these.
 
@@ -38,14 +38,20 @@ Everything in the API is one of these.
 | --- | --- |
 | **Display** | A physical panel bound to your account. It reports battery, firmware, tags, and the geometry and formats it can render. |
 | **Asset** | One piece of raw input: text, a link, an image, or a file. Assets are validated locally before anything is sent. |
-| **Content** | A submission — a set of assets plus your intent. It moves through `pending → processing → ready`. |
-| **Presentation** | A rendered frame for one Display, in one format (`png`, `raw2`, `raw4`). One Content can produce several. |
+| **Content** | A submission — a set of assets. It is storage, not work; it is `pending` until its assets land, then `ready`. |
+| **Analysis** | One agent run over some Contents, the user's history, or both. It is what actually reads, plans, renders, and delivers. |
+| **Presentation** | One finished frame — for a Display, or display-free Scene JSON and PNG renditions. |
 
-The shape of a normal day: you create a **Content** out of **Assets**, inklet
-turns it into one or more **Presentations**, and a **Display** picks one up
-the next time it wakes.
+The shape of a normal day: you upload a **Content** made of **Assets**, start an
+**Analysis** over it, and inklet produces one or more **Presentations** that a
+**Display** picks up the next time it wakes.
+
+Uploading spends nothing. The Analysis is the call that does the work.
 
 ## Three ways to push
+
+`inklet.push.*` is one call for the common case — upload a Content, then
+analyze it — and the three methods differ in how much of the decision you keep.
 
 <Cards>
   <Card title="Auto" href="/push/auto">
@@ -58,6 +64,10 @@ the next time it wakes.
     You supply the finished image.
   </Card>
 </Cards>
+
+Reach past them — [`contents.upload()`](/api/contents#upload) and
+[`analyses.analyze()`](/api/analyses) — when you want to analyze the user's
+history, target several displays, or render without a panel at all.
 
 ## Requirements
 
@@ -76,6 +86,9 @@ included; you do not need a `@types` package.
   </Card>
   <Card title="Lifecycle" href="/lifecycle">
     Why a successful push is not yet a rendered frame.
+  </Card>
+  <Card title="Analysis events" href="/api/events">
+    Follow a run while it happens, without polling.
   </Card>
   <Card title="API reference" href="/api/client">
     Every resource, option, and return type.

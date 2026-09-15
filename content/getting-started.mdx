@@ -79,28 +79,27 @@ const result = await inklet.push.auto({
   assets: [inklet.assets.text("Milk, eggs, coffee")],
 });
 
-console.log(result.contentId, result.state);
+console.log(result.contentId, result.analysisId, result.state);
 ```
 
 ### Wait for it to land
 
-The call above returns as soon as inklet has your assets — usually with
-`state: "processing"` and no Presentation IDs yet. Poll until it settles:
+The call above returns as soon as inklet has your assets and has accepted the
+Analysis — usually with `state: "queued"` and no Presentation IDs yet. Wait for
+the run to finish:
 
 ```ts
-let content = await inklet.contents.retrieve(result.contentId);
+const analysis = await inklet.analyses.wait(result.analysisId);
 
-while (content.state === "processing") {
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  content = await inklet.contents.retrieve(content.id);
-}
-
-if (content.state === "failed") {
-  console.error(content.processing.error);
+if (analysis.outcome === "no_change") {
+  console.log("nothing worth showing:", analysis.noChangeReason);
 } else {
-  console.log("presentations:", content.presentationIds);
+  console.log("presentations:", analysis.presentationIds);
 }
 ```
+
+A `failed` Analysis throws `AnalysisFailedError`. To watch the run instead of
+waiting on it, see [Analysis events](/api/events).
 
 </div>
 
@@ -129,7 +128,7 @@ async function main() {
     ],
   });
 
-  console.log(`content ${result.contentId} (${result.state})`);
+  console.log(`analysis ${result.analysisId} (${result.state})`);
 }
 
 main().catch((error) => {
@@ -149,6 +148,7 @@ main().catch((error) => {
 ## Next
 
 - [Authentication](/authentication) — tokens, environments, and pointing at a Compute Hub
-- [Plans and AI features](/plans) — Free vs. Pro and subscription authorization
+- [Plans and AI features](/plans) — Free vs. Pro, quotas, and history depth
 - [Pushing content](/push) — the differences between Auto, Manual, and Hardcode
-- [Lifecycle](/lifecycle) — states, stages, and knowing when a frame is real
+- [Lifecycle](/lifecycle) — states, idempotency, and knowing when a frame is real
+- [Analyses](/api/analyses) — the full surface behind `push.*`

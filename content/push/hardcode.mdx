@@ -30,9 +30,19 @@ const result = await inklet.push.hardcode({
 inklet.push.hardcode(input: HardcodePushInput): Promise<HardcodePushResult>
 ```
 
-<SdkType file="push" name="HardcodePushInput" />
+```ts
+interface HardcodePushInput {
+  displayId: string;
+  image: ImageAsset;
+  idempotencyKey?: string;
+}
+```
 
 Note that `image` is a single asset, not an array — the shape enforces the rule.
+There is no `intent` or `context`: nothing is being reasoned about.
+
+Underneath, this is [`contents.upload()`](/api/contents#upload) followed by
+[`analyses.direct()`](/api/analyses#direct), which is the no-AI path.
 
 ## Dimensions are the server's job
 

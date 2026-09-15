@@ -6,7 +6,8 @@ description: inklet.push.auto lets inklet choose which compatible displays recei
 
 <Callout type="warn">
   Auto uses inklet AI and requires an active Pro subscription. A Free account
-  receives `SubscriptionRequiredError`; manage the plan in the inklet portal.
+  receives a `PermissionDeniedError` with `code: "plan_upgrade_required"`;
+  manage the plan in the inklet portal.
 </Callout>
 
 Use Auto when you have something worth showing and no strong opinion about
@@ -31,34 +32,43 @@ const result = await inklet.push.auto({
 inklet.push.auto(input: AutoPushInput): Promise<AutoPushResult>
 ```
 
-<SdkType file="push" name="AutoPushInput" />
+```ts
+interface AutoPushInput {
+  assets: readonly InkletAsset[];
+  title?: string;
+  intent?: string;
+  context?: "submitted" | "history";
+  idempotencyKey?: string;
+}
+```
 
-`displayId` is not accepted — passing one to the underlying Content resource
-throws `ConfigurationError` ("Auto Content must omit displayId"). Auto is
-defined by not naming a target.
+`displayId` is not accepted. Auto is defined by naming no target, which is what
+lets the agent choose.
 
 ## Which displays receive it
 
 inklet decides, based on the assets, your account's displays, and their
-declared capabilities. A Content can produce several Presentations — one per
+declared capabilities. One Analysis can produce several Presentations — one per
 display it routed to — which is why `presentationIds` is an array.
 
-To see where it actually landed, read the Content once it is `ready` and
-retrieve each Presentation:
+To see where it actually landed, wait for the Analysis and retrieve each
+Presentation:
 
 ```ts
-const content = await inklet.contents.retrieve(result.contentId);
+const analysis = await inklet.analyses.wait(result.analysisId);
 
-for (const id of content.presentationIds) {
+for (const id of analysis.presentationIds) {
   const presentation = await inklet.presentations.retrieve(id);
-  console.log(presentation.displayId, presentation.state);
+  console.log(presentation.displayId, presentation.title, presentation.state);
 }
 ```
 
-<Callout>
-  Auto can route to zero displays if none are compatible with what you sent.
-  A `ready` Content with an empty `presentationIds` is the signal — check
-  `content.processing.warnings` for the reason.
+<Callout type="warn">
+  Auto needs a display it can use. When the account has none bound with usable
+  geometry, `push.auto` fails **immediately** with `422` and
+  `code: "no_compatible_display"` — the Analysis is never created. Bind a
+  display, or use [`presentations.generate()`](/api/presentations#generating-without-a-display)
+  for a display-free result.
 </Callout>
 
 ## Errors specific to Auto
@@ -69,8 +79,9 @@ for (const id of content.presentationIds) {
 | `assets` empty | `ConfigurationError` — "Auto Push requires at least one Asset." |
 | More than 50 assets | `ConfigurationError` |
 | An asset fails validation | `ConfigurationError`, naming the asset index |
-| The PAT owner is on Free | `SubscriptionRequiredError` — upgrade to Pro, then retry with the same PAT |
+| No usable display on the account | `ApiError`, `422`, `code: "no_compatible_display"` |
+| The PAT owner is on Free | `PermissionDeniedError`, `403`, `code: "plan_upgrade_required"` |
 
-The validation errors throw locally, before a request is sent. Subscription
-authorization is enforced by the inklet service before it creates a Content or
-any upload tickets.
+The validation errors throw locally, before a request is sent. Plan
+authorization is enforced by the inklet service when the Analysis is created,
+after the Content has been uploaded.

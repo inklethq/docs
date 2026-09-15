@@ -1,47 +1,119 @@
 ---
 title: Contents
-description: The Content resource — the lower-level lifecycle behind inklet.push, including create, confirm, and upload ticket refresh.
+description: The Content resource in the inklet SDK — upload assets to storage, refresh upload tickets, and read what a Content became.
 ---
 
 
-A Content is one submission: a set of assets plus your intent. Most
-applications should use [`inklet.push.*`](/push), which drives this resource
-for you. Reach for it directly when you need to control the individual calls.
+A Content is one submission: a set of assets, and nothing more. It is storage,
+not work. Uploading spends no quota and runs no AI — nothing happens to a
+Content until an [Analysis](/api/analyses) references it.
 
-## `retrieve()`
+```ts
+const { content } = await inklet.contents.upload({
+  title: "Dentist",
+  assets: [inklet.assets.text("Dentist at 9am tomorrow")],
+});
+```
+
+## `upload()`
+
+The one call most applications need. It creates the Content, uploads every
+binary asset directly to its presigned URL, and retries a failed upload once
+with a fresh ticket.
+
+```ts
+upload(input: UploadContentInput): Promise<UploadContentResult>
+```
+
+```ts
+interface UploadContentInput {
+  title?: string | null;
+  assets: readonly InkletAsset[];
+  /** Generated when omitted; returned for caller-controlled retries. */
+  idempotencyKey?: string;
+}
+
+interface UploadContentResult {
+  content: Content;
+  idempotencyKey: string;
+}
+```
+
+The returned `idempotencyKey` is worth keeping: [`push.*`](/push) and
+`presentations.generate()` reuse the same key for the Content and the Analysis
+they start from it.
+
+## Content states
+
+```text
+pending ──→ ready
+        └─→ failed
+```
+
+| State | Meaning |
+| --- | --- |
+| `pending` | Assets are not all confirmed in storage yet. |
+| `ready` | Every asset is stored. |
+| `failed` | Ingestion gave up; `failure` explains why. |
+
+Text and link Contents are `ready` immediately. A Content with binary assets is
+`pending` until inklet has verified the uploads, which happens on its own or
+when an Analysis first references the Content.
+
+<Callout>
+  You rarely need to wait for `ready`. `inklet.analyze()` verifies pending
+  uploads itself, so uploading and analyzing back to back is fine. Use
+  `waitUntilReady()` only when you want to observe ingestion without analyzing.
+</Callout>
+
+## `waitUntilReady()`
+
+```ts
+const stored = await inklet.contents.waitUntilReady(content);
+```
+
+Polls until the Content is `ready` or `failed`. `pollIntervalMs` defaults to
+1,000 ms (100–60,000) and `timeoutMs` to 60,000 ms (1–1,800,000); a `signal`
+aborts with `OperationAbortedError`, and running out of time throws
+`OperationTimeoutError`.
+
+## `retrieve()` and `list()`
 
 ```ts
 const content = await inklet.contents.retrieve("content_123");
-```
 
-The main use is [polling](/lifecycle#polling) after a push.
-
-## `list()`
-
-```ts
-const page = await inklet.contents.list({ mode: "manual", state: "ready" });
+const page = await inklet.contents.list({ state: "ready", limit: 20 });
 ```
 
 ```ts
-list(options?: ListContentsOptions): Promise<ContentPage>
+interface ListContentsOptions {
+  state?: "pending" | "ready" | "failed";
+  cursor?: string;
+  limit?: number;
+}
 ```
 
-<SdkType file="contents" name="ListContentsOptions" />
-
-An out-of-range value for `state` or `mode` throws `ConfigurationError`
-locally.
+An out-of-range `state`, or a `limit` outside 1–50, throws
+`ConfigurationError` locally.
 
 ## `create()`
+
+The lower level, for applications that manage their own uploads.
 
 ```ts
 create(input: CreateContentRequest, idempotencyKey: string): Promise<CreateContentResponse>
 ```
 
-<SdkType file="contents" name="CreateContentRequest" />
+```ts
+interface CreateContentRequest {
+  title?: string | null;
+  assets: readonly CreateContentAssetInput[];
+}
+```
 
 <Callout type="warn">
-  Note the asset shape here differs from [`inklet.assets.*`](/api/assets).
-  Binary assets are declared by **metadata only** — `filename`, `contentType`,
+  The asset shape here differs from [`inklet.assets.*`](/api/assets). Binary
+  assets are declared by **metadata only** — `filename`, `contentType`,
   `sizeBytes` — because the bytes go to a presigned URL afterwards, not in this
   request body.
 </Callout>
@@ -56,16 +128,17 @@ type CreateContentAssetInput =
 
 Returns the Content plus one upload ticket per binary asset:
 
-<SdkType file="contents" name="CreateContentResponse" />
+```ts
+interface CreateContentResponse {
+  content: Content;
+  uploadTickets: readonly UploadTicket[];
+}
+```
 
 <SdkType file="contents" name="UploadTicket" />
 
 `idempotencyKey` is required here — 8–128 printable ASCII characters, no
 spaces. It is sent as the `idempotency-key` header.
-
-The service applies the same plan authorization at this lower level: `auto`
-and `manual` require Pro, while `hardcode` is available on Free. Direct use of
-`contents.create()` cannot bypass the AI feature gate.
 
 ### Validation
 
@@ -73,33 +146,16 @@ Enforced locally, before the request:
 
 | Field | Rule |
 | --- | --- |
-| `mode` | Must be one of the three modes |
-| `displayId` | Required for `manual`/`hardcode`; must be omitted for `auto` |
+| `title` | A string or `null` |
 | `assets` | 1–50 entries |
-| Hardcode assets | Exactly one asset, and it must be a PNG or JPEG image |
 | `sizeBytes` | Integer, 1 to 10 MiB |
 | Link URLs | Absolute HTTP(S), no embedded credentials |
 | Text | At least one non-whitespace character |
-
-## `confirm()`
-
-Closes uploads and starts processing:
-
-```ts
-const content = await inklet.contents.confirm(content.id);
-```
-
-Check `content.upload.status` afterwards:
-
-| Status | Meaning |
-| --- | --- |
-| `awaiting_upload` | Nothing uploaded yet |
-| `partial` | Some assets missing — `upload.failedAssetIndexes` lists them |
-| `complete` | All assets present |
+| `contentType` | Within the allowed list for that asset kind |
 
 ## `refreshUploadTickets()`
 
-New presigned URLs for assets that failed to upload:
+New presigned URLs for assets whose tickets expired or whose upload failed:
 
 ```ts
 const refreshed = await inklet.contents.refreshUploadTickets(content.id, [0, 2]);
@@ -108,28 +164,46 @@ const refreshed = await inklet.contents.refreshUploadTickets(content.id, [0, 2])
 `assetIndexes` must be one or more unique non-negative integers; anything else
 throws `ConfigurationError`. Returns the same shape as `create()`.
 
+<Callout>
+  This also accepts a **`failed`** Content. A Content that failed because its
+  upload window closed (`failure.code` is `upload_expired`) goes back to
+  `pending` once new tickets are issued, so missing the window once is not
+  permanent. A `ready` Content keeps its state.
+</Callout>
+
 ## The `Content` type
 
-<SdkType file="contents" name="Content" />
+```ts
+interface Content {
+  id: string;
+  title: string | null;
+  state: "pending" | "ready" | "failed";
+  assets: readonly ContentAsset[];
+  failedAssetIndexes: readonly number[];
+  /** Every Analysis that named this Content in contentIds, oldest first. */
+  analysisIds: readonly string[];
+  /** Presentations that include this Content as an input, oldest first. */
+  presentationIds: readonly string[];
+  failure: PresentationProblem | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
 
 <SdkType file="contents" name="ContentAsset" />
 
-<SdkType file="contents" name="ContentUpload" />
-
-<SdkType file="contents" name="ContentProcessing" />
-
-`warnings` is worth logging even on success — it is where inklet reports things
-like a link it could not fetch, or a display it skipped.
+`analysisIds` counts only Analyses that **named** this Content. An Analysis
+that picked it up from history as context does not appear there — that
+relationship is recorded on the Presentation instead, as a `context` role. See
+[Presentations](/api/presentations#which-contents-are-behind-it).
 
 ## Doing it by hand
 
-The full sequence `push.*` performs, if you need to own each step:
+The full sequence `upload()` performs, if you need to own each step:
 
 ```ts
 const created = await inklet.contents.create(
   {
-    mode: "manual",
-    displayId: "display_123",
     title: "Menu",
     assets: [
       { type: "text", text: "Tonight" },
@@ -154,11 +228,30 @@ for (const ticket of created.uploadTickets) {
   await fetch(ticket.url, { method: "POST", body: form });
 }
 
-const content = await inklet.contents.confirm(created.content.id);
+const analysis = await inklet.analyze({ contentIds: [created.content.id] });
 ```
 
 <Callout>
   Note the upload `fetch` above carries no inklet credentials — that is
-  deliberate, and `push.*` does the same. Never attach your PAT to a storage
+  deliberate, and `upload()` does the same. Never attach your PAT to a storage
   URL.
 </Callout>
+
+## When an upload will not land
+
+If assets are still missing after the SDK has refreshed their tickets and
+retried, it throws:
+
+```ts
+import { AssetUploadError } from "@inklethq/sdk";
+
+try {
+  await inklet.contents.upload({ assets });
+} catch (error) {
+  if (error instanceof AssetUploadError) {
+    console.error(error.contentId, error.failedAssetIndexes);
+  }
+}
+```
+
+`failedAssetIndexes` maps back to the positions in the array you passed.

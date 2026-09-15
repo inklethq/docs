@@ -35,19 +35,30 @@ if a `document` exists.
 | `baseUrl` | `string` — normalized, trailing slashes removed |
 | `assets` | [`AssetsResource`](/api/assets) |
 | `contents` | [`ContentsResource`](/api/contents) |
+| `analyses` | [`AnalysesResource`](/api/analyses) |
 | `displays` | [`DisplaysResource`](/api/displays) |
 | `presentations` | [`PresentationsResource`](/api/presentations) |
 | `push` | `PushResource` — see [Pushing content](/push) |
+
+## Shorthands
+
+```ts
+inklet.analyze(input?: AnalyzeInput): Promise<Analysis>
+inklet.direct(input: DirectInput): Promise<Analysis>
+```
+
+Aliases for `inklet.analyses.analyze()` and `inklet.analyses.direct()`.
 
 ## Constants
 
 ```ts
 import {
-  DEFAULT_INKLET_BASE_URL, // "https://dev.iminklet.com"
-  MAX_ASSET_SIZE_BYTES,    // 10485760 (10 MiB)
-  MAX_ASSETS_PER_CONTENT,  // 50
+  DEFAULT_INKLET_BASE_URL,  // "https://dev.iminklet.com"
+  MAX_ASSET_SIZE_BYTES,     // 10485760 (10 MiB)
+  MAX_ASSETS_PER_CONTENT,   // 50
   ALLOWED_IMAGE_CONTENT_TYPES,
   ALLOWED_FILE_CONTENT_TYPES,
+  INKLET_SCENE_MEDIA_TYPE,  // "application/vnd.inklet.scene+json;version=1"
 } from "@inklethq/sdk";
 ```
 
@@ -77,6 +88,21 @@ Every request automatically carries `authorization: Bearer …` and
 Responses are parsed as JSON when the content type says so; `204`, `205`, `HEAD`,
 and empty bodies resolve to `undefined`. Non-JSON bodies resolve as text.
 
+## `requestRaw()`
+
+The same transport, resolving with the raw `Response` without reading the body:
+
+```ts
+const response = await inklet.requestRaw("/api/sdk/v1/analyses/an_1/events/stream", {
+  headers: { accept: "text/event-stream" },
+});
+```
+
+Non-2xx responses still throw the usual typed errors, so you only ever receive
+a successful response. This is for endpoints whose body must be consumed
+incrementally — the [Analysis event stream](/api/events) is the one the SDK
+itself uses it for. `request()` is the right choice for everything else.
+
 ## API surface
 
 All typed resources sit under one prefix:
@@ -91,9 +117,26 @@ All typed resources sit under one prefix:
 | `GET` | `/displays/{id}` |
 | `GET` | `/displays/{id}/queue` |
 | `GET` | `/displays/{id}/current-presentation` |
+| `POST` | `/displays/{id}/current` |
+| `POST` | `/displays/{id}/advance` |
+| `GET` | `/presentations` |
 | `GET` | `/presentations/{id}` |
+| `POST` | `/presentations/{id}/renditions` |
 | `POST` | `/contents` |
 | `GET` | `/contents` |
 | `GET` | `/contents/{id}` |
-| `POST` | `/contents/{id}/confirm` |
 | `POST` | `/contents/{id}/upload-tickets` |
+| `POST` | `/analyses` |
+| `GET` | `/analyses` |
+| `GET` | `/analyses/{id}` |
+| `GET` | `/analyses/{id}/events` |
+| `GET` | `/analyses/{id}/events/stream` |
+| `GET` | `/analyses/{id}/archive` |
+
+<Callout>
+  `/api/app/v1` is inklet's own first-party apps' mirror of the same API, with
+  the same handlers and the same JSON; the SDK always uses `/api/sdk/v1`.
+</Callout>
+
+An unknown path under the prefix answers `404` and a wrong method `405`, both
+with `code: "invalid_request"`.

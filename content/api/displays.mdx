@@ -1,11 +1,12 @@
 ---
 title: Displays
-description: Reading inklet displays — list, retrieve, queue, and the currently confirmed presentation.
+description: Reading inklet displays — list, retrieve, queue, the confirmed presentation — and switching what a panel shows.
 ---
 
 
-`inklet.displays` is read-only. Displays are bound to your account through the
-Portal or the mobile app; the SDK observes them.
+Displays are bound to your account through the Portal or the mobile app; the
+SDK observes them, and can change which already-rendered frame a panel is
+showing.
 
 ## `list()`
 
@@ -49,7 +50,8 @@ is not a non-empty string.
 
 ## `listQueue()`
 
-What is waiting for a display, optionally within a time range:
+What is waiting to go on the panel, oldest first within a priority, optionally
+within a time range:
 
 ```ts
 const queue = await inklet.displays.listQueue(display.id, {
@@ -71,7 +73,27 @@ as ISO strings. An unparseable value, or `to` earlier than `from`, throws
 
 Each item:
 
-<SdkType file="displays" name="DisplayQueueItem" />
+```ts
+interface DisplayQueueItem {
+  id: string;
+  displayId: string;
+  /** Same shape and ordering as `Presentation.contentIds`. */
+  contentIds: readonly { id: string; role: "input" | "context" }[];
+  /** Same values as `Presentation.mode` and `Analysis.mode`. */
+  mode: "ai" | "direct";
+  state: PresentationState;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+<Callout>
+  The queue only ever holds `queued` Presentations. Once one is delivered it
+  leaves the queue, and the frame it replaces expires rather than going back in.
+  For the display's full history — the `published`, `confirmed`, and `expired`
+  ones too — use
+  [`presentations.list({ displayId })`](/api/presentations#filtering-by-display).
+</Callout>
 
 ## `current()`
 
@@ -94,6 +116,74 @@ current(displayId: string, options?: { format?: "png" | "raw2" | "raw4" }): Prom
 <Callout>
   `null` is a normal answer, not an error — a display that has never confirmed
   a frame has no current Presentation. Handle it before reading `.image`.
+</Callout>
+
+## Changing what is on the panel
+
+Picking what a panel shows needs no AI and no new Content. Neither call below
+consumes AI or push quota.
+
+### `setCurrent()`
+
+```ts
+await inklet.displays.setCurrent(display.id, presentation.id);
+```
+
+```ts
+setCurrent(displayId: string, presentationId: string): Promise<Display>
+```
+
+The Presentation must be one of yours, of `kind: "display"`, already delivered
+to **this** display, and finished rendering. An `expired` one can be
+reactivated — that is how "go back to the previous image" works. Anything else
+is a `ConflictError`:
+
+| `details.reason` | Meaning |
+| --- | --- |
+| `targetless` | The Presentation has no target display, so it cannot go on a panel. |
+| `not_delivered` | It was never delivered to any display. |
+| `other_display` | It was delivered to a different panel. |
+| `not_rendered` | It has no rendered image yet. |
+
+<Callout type="warn">
+  Branch on `error.details.reason`, not on `error.message`. The four reasons
+  above are the stable part. The whole envelope is `409` with
+  `code: "presentation_not_deliverable"` and
+  `details: { displayId, reason, presentationId }`.
+</Callout>
+
+The frame that was on the panel becomes `expired`; it does not go back into the
+queue. The switch lands on `pendingPresentationId`, and
+`currentPresentationId` follows once the panel confirms — which for an offline
+panel is its next sync.
+
+### `advance()`
+
+```ts
+const { changed } = await inklet.displays.advance(display.id);
+```
+
+Rotates to the next queued Presentation, highest priority first and oldest
+first within a priority. `changed: false` means the queue was empty, which is a
+normal `200` and changes nothing — not an error. Otherwise the effect matches
+`setCurrent()`.
+
+### `waitUntilCurrent()`
+
+```ts
+await inklet.displays.waitUntilCurrent(display.id, presentation.id, {
+  timeoutMs: 10 * 60_000,
+});
+```
+
+Polls until the display reports `presentationId` as its **confirmed** current
+Presentation. `pollIntervalMs` defaults to 1,000 ms and `timeoutMs` to
+120,000 ms.
+
+<Callout>
+  A timeout throws `OperationTimeoutError` and does not cancel the switch — the
+  panel still shows the Presentation once it syncs. `error.details` carries
+  `displayId`, `presentationId`, `pendingPresentationId`, and `timeoutMs`.
 </Callout>
 
 ## The `Display` type
