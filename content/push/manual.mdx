@@ -33,19 +33,10 @@ const result = await inklet.push.manual({
 ## Signature
 
 ```ts
-inklet.push.manual(input: ManualPushInput): Promise<ManualPushResult>
+inklet.push.manual(input: ManualPushInput, options?: CallOptions): Promise<ManualPushResult>
 ```
 
-```ts
-interface ManualPushInput {
-  displayId: string;
-  assets: readonly InkletAsset[];
-  title?: string;
-  intent?: string;
-  context?: "submitted" | "history";
-  idempotencyKey?: string;
-}
-```
+<SdkType file="push" name="ManualPushInput" />
 
 ## Finding the display id
 

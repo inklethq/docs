@@ -71,12 +71,38 @@ history, target several displays, or render without a panel at all.
 
 ## Requirements
 
-- Node.js 20 or newer — the SDK uses the global `fetch`, `Blob`, and `FormData`
+- Node.js 22 or newer — the SDK uses the global `fetch`, `Blob`, `FormData`,
+  and `AbortSignal`
 - A trusted server environment
 - A personal access token from the Portal dashboard
 
-ESM and CommonJS builds ship together, and TypeScript declarations are
-included; you do not need a `@types` package.
+ESM and CommonJS builds ship together, each with its own TypeScript
+declarations; you do not need a `@types` package. The SDK is MIT licensed.
+
+## Versioning
+
+The SDK is pre-1.0. A minor release (`0.3` → `0.4`) can break the API and
+lists each break under **Breaking** in the
+[changelog](https://github.com/inklethq/sdk/blob/main/CHANGELOG.md); a patch
+release does not. npm's default `^0.3.0` range already stays on `0.3.x`.
+
+Fields inklet reports as a fixed set of words — a `state`, a `mode`, a
+`format`, an event's `type` — are typed as the values the SDK knows **plus any
+other string**. When inklet adds a value, an installed SDK reads it through
+instead of failing, so compare against the values you handle and keep a
+default branch:
+
+```ts
+switch (analysis.state) {
+  case "completed":
+  case "failed":
+    return analysis;
+  default:
+    return undefined; // queued, running, or something newer: not finished
+}
+```
+
+The waiting helpers treat a state they do not know as not finished yet.
 
 ## Where to go next
 

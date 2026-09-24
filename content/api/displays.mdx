@@ -73,19 +73,7 @@ as ISO strings. An unparseable value, or `to` earlier than `from`, throws
 
 Each item:
 
-```ts
-interface DisplayQueueItem {
-  id: string;
-  displayId: string;
-  /** Same shape and ordering as `Presentation.contentIds`. */
-  contentIds: readonly { id: string; role: "input" | "context" }[];
-  /** Same values as `Presentation.mode` and `Analysis.mode`. */
-  mode: "ai" | "direct";
-  state: PresentationState;
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="displays" name="DisplayQueueItem" />
 
 <Callout>
   The queue only ever holds `queued` Presentations. Once one is delivered it
@@ -130,7 +118,7 @@ await inklet.displays.setCurrent(display.id, presentation.id);
 ```
 
 ```ts
-setCurrent(displayId: string, presentationId: string): Promise<Display>
+setCurrent(displayId: string, presentationId: string, options?: CallOptions): Promise<Display>
 ```
 
 The Presentation must be one of yours, of `kind: "display"`, already delivered
@@ -168,6 +156,11 @@ first within a priority. `changed: false` means the queue was empty, which is a
 normal `200` and changes nothing — not an error. Otherwise the effect matches
 `setCurrent()`.
 
+Neither `setCurrent()` nor `advance()` is retried automatically. A retried
+`advance()` after a lost response would skip a second Presentation, so after a
+network error read the display and check `pendingPresentationId` before
+calling it again.
+
 ### `waitUntilCurrent()`
 
 ```ts
@@ -178,7 +171,8 @@ await inklet.displays.waitUntilCurrent(display.id, presentation.id, {
 
 Polls until the display reports `presentationId` as its **confirmed** current
 Presentation. `pollIntervalMs` defaults to 1,000 ms and `timeoutMs` to
-120,000 ms.
+120,000 ms. Up to three failed reads in a row — a dropped connection, a
+timeout, or HTTP 408, 429, or 5xx — are retried with back-off.
 
 <Callout>
   A timeout throws `OperationTimeoutError` and does not cancel the switch — the

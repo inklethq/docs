@@ -130,6 +130,11 @@ if (done.outcome === "no_change") {
 backend code is on `error.details.backendCode`. A timeout throws
 `OperationTimeoutError` and does **not** cancel the run.
 
+Every waiting helper polls for you, treats its `timeoutMs` as a hard deadline,
+and rides out up to three transient failures in a row — a dropped connection, a
+timeout, or HTTP 408, 429, or 5xx — before giving up. See
+[Timeouts and retries](/reliability).
+
 ### Wait for the frame, if you need it
 
 ```ts
@@ -222,6 +227,29 @@ throws a `ConfigurationError` locally, and would be a `400` at the service.
 
 Keys are remembered for 24 hours.
 
+### Retrying a call that failed
+
+The SDK never retries a call that creates or changes something on its own. A
+call that fails after sending — a timeout, a dropped connection, a `5xx` — may
+already have created something, so retry it with the key it used, not a fresh
+one. Every error such a call throws carries that key, including one the SDK
+generated:
+
+```ts
+import { NetworkError } from "@inklethq/sdk";
+
+try {
+  await inklet.push.auto({ assets });
+} catch (error) {
+  if (error instanceof NetworkError && error.idempotencyKey) {
+    // Same input, same key: picks up what the first attempt created.
+    await inklet.push.auto({ assets, idempotencyKey: error.idempotencyKey });
+  } else {
+    throw error;
+  }
+}
+```
+
 <Callout>
   A generated key is only useful if you keep it. If you plan to retry, pass your
   own — derived from something stable in your domain, like a date, a record id,
@@ -243,7 +271,8 @@ binary asset.
 ### Upload
 
 Each asset is uploaded directly to its ticket URL, in parallel. Your token is
-not attached to these requests.
+not attached to these requests, and each upload is timed by the client's
+`uploadTimeoutMs` — five minutes by default.
 
 ### Refresh once
 
@@ -261,10 +290,12 @@ try {
   await inklet.push.manual({ displayId, assets });
 } catch (error) {
   if (error instanceof AssetUploadError) {
-    console.error(error.contentId, error.failedAssetIndexes);
+    console.error(error.contentId, error.failedAssetIndexes, error.cause);
   }
 }
 ```
 
 `failedAssetIndexes` maps back to the positions in the array you passed, so you
-can identify exactly which files did not make it.
+can identify exactly which files did not make it; `cause` is the underlying
+failure of the first one. The error carries `idempotencyKey` too, so calling
+again with it picks the same Content back up.

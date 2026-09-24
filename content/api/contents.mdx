@@ -25,19 +25,9 @@ with a fresh ticket.
 upload(input: UploadContentInput): Promise<UploadContentResult>
 ```
 
-```ts
-interface UploadContentInput {
-  title?: string | null;
-  assets: readonly InkletAsset[];
-  /** Generated when omitted; returned for caller-controlled retries. */
-  idempotencyKey?: string;
-}
+<SdkType file="contents" name="UploadContentInput" />
 
-interface UploadContentResult {
-  content: Content;
-  idempotencyKey: string;
-}
-```
+<SdkType file="contents" name="UploadContentResult" />
 
 The returned `idempotencyKey` is worth keeping: [`push.*`](/push) and
 `presentations.generate()` reuse the same key for the Content and the Analysis
@@ -85,16 +75,32 @@ const content = await inklet.contents.retrieve("content_123");
 const page = await inklet.contents.list({ state: "ready", limit: 20 });
 ```
 
-```ts
-interface ListContentsOptions {
-  state?: "pending" | "ready" | "failed";
-  cursor?: string;
-  limit?: number;
-}
-```
+<SdkType file="contents" name="ListContentsOptions" />
 
 An out-of-range `state`, or a `limit` outside 1–50, throws
 `ConfigurationError` locally.
+
+### Searching
+
+`q` searches the Content library:
+
+```ts
+const found = await inklet.contents.list({ q: "dentist thursday" });
+```
+
+Every whitespace-separated term must appear on the same Content — in its title,
+or in an asset's text, link, or filename, or in what inklet read out of an
+image or file. Matching is case-insensitive and by substring, so Chinese,
+Japanese, and Korean text matches without word breaks. Paging and ordering are
+the same as for the unfiltered list, and searching is free on every plan.
+
+Text, links, and filenames are searchable the moment a Content is created. What
+inklet reads out of an image or file is filled in shortly afterwards, so a
+search by what a new upload *shows* can take a moment to find it.
+
+The SDK trims `q` and sends nothing for a blank value. More than 200 characters
+(`MAX_CONTENT_SEARCH_LENGTH`) throws `ConfigurationError` before a request is
+made.
 
 ## `create()`
 
@@ -104,12 +110,7 @@ The lower level, for applications that manage their own uploads.
 create(input: CreateContentRequest, idempotencyKey: string): Promise<CreateContentResponse>
 ```
 
-```ts
-interface CreateContentRequest {
-  title?: string | null;
-  assets: readonly CreateContentAssetInput[];
-}
-```
+<SdkType file="contents" name="CreateContentRequest" />
 
 <Callout type="warn">
   The asset shape here differs from [`inklet.assets.*`](/api/assets). Binary
@@ -128,12 +129,7 @@ type CreateContentAssetInput =
 
 Returns the Content plus one upload ticket per binary asset:
 
-```ts
-interface CreateContentResponse {
-  content: Content;
-  uploadTickets: readonly UploadTicket[];
-}
-```
+<SdkType file="contents" name="CreateContentResponse" />
 
 <SdkType file="contents" name="UploadTicket" />
 
@@ -173,22 +169,7 @@ throws `ConfigurationError`. Returns the same shape as `create()`.
 
 ## The `Content` type
 
-```ts
-interface Content {
-  id: string;
-  title: string | null;
-  state: "pending" | "ready" | "failed";
-  assets: readonly ContentAsset[];
-  failedAssetIndexes: readonly number[];
-  /** Every Analysis that named this Content in contentIds, oldest first. */
-  analysisIds: readonly string[];
-  /** Presentations that include this Content as an input, oldest first. */
-  presentationIds: readonly string[];
-  failure: PresentationProblem | null;
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="contents" name="Content" />
 
 <SdkType file="contents" name="ContentAsset" />
 
@@ -249,9 +230,13 @@ try {
   await inklet.contents.upload({ assets });
 } catch (error) {
   if (error instanceof AssetUploadError) {
-    console.error(error.contentId, error.failedAssetIndexes);
+    console.error(error.contentId, error.failedAssetIndexes, error.cause);
   }
 }
 ```
 
-`failedAssetIndexes` maps back to the positions in the array you passed.
+`failedAssetIndexes` maps back to the positions in the array you passed, and
+`cause` is the underlying failure of the first asset that still failed. Like
+every error from a call that sent an `Idempotency-Key`, it carries
+`idempotencyKey`: call `upload()` again with it to pick the same Content back
+up instead of creating a second one.

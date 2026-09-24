@@ -1,6 +1,6 @@
 ---
 title: Client
-description: Constructing the inklet client — options, defaults, resources, and the low-level request method.
+description: Constructing the inklet client — options, defaults, timeouts, resources, and the low-level request methods.
 ---
 
 
@@ -22,11 +22,16 @@ const inklet = new Inklet({ pat: process.env.INKLET_PAT! });
 | `secretKey` | — | Compatibility alias for `pat`. Do not pass both. |
 | `baseUrl` | `https://dev.iminklet.com` | Absolute HTTP(S) URL, no credentials, query, or fragment. |
 | `fetch` | `globalThis.fetch` | Must match the standard signature. |
+| `timeoutMs` | `60_000` | How long each API request may take. |
+| `uploadTimeoutMs` | `300_000` | How long each binary upload to storage may take. |
 
 Construction is validated but makes **no network request**. It throws
 `ConfigurationError` for a missing or malformed token, a bad `baseUrl`, both
-credentials at once, or a runtime with no `fetch`; and `BrowserEnvironmentError`
-if a `document` exists.
+credentials at once, a timeout that is not a whole number from 1 to
+2,147,483,647, or a runtime with no `fetch`; and `BrowserEnvironmentError` if a
+`document` exists.
+
+See [Timeouts and retries](/reliability) for what the two timeouts cover.
 
 ## Properties
 
@@ -49,6 +54,24 @@ inklet.direct(input: DirectInput): Promise<Analysis>
 
 Aliases for `inklet.analyses.analyze()` and `inklet.analyses.direct()`.
 
+## Per-call options
+
+Every method that talks to inklet also takes `{ signal, timeoutMs }` — as a
+trailing argument, or inside the options object it already has:
+
+<SdkType file="resource" name="CallOptions" />
+
+```ts
+const controller = new AbortController();
+
+await inklet.displays.list({ limit: 20, signal: controller.signal });
+await inklet.displays.retrieve(displayId, { timeoutMs: 5_000 });
+await inklet.push.auto({ assets }, { signal: AbortSignal.timeout(30_000) });
+```
+
+An aborted call throws `OperationAbortedError`; a request that runs out of time
+throws `RequestTimeoutError`. See [Timeouts and retries](/reliability).
+
 ## Constants
 
 ```ts
@@ -56,6 +79,7 @@ import {
   DEFAULT_INKLET_BASE_URL,  // "https://dev.iminklet.com"
   MAX_ASSET_SIZE_BYTES,     // 10485760 (10 MiB)
   MAX_ASSETS_PER_CONTENT,   // 50
+  MAX_CONTENT_SEARCH_LENGTH, // 200
   ALLOWED_IMAGE_CONTENT_TYPES,
   ALLOWED_FILE_CONTENT_TYPES,
   INKLET_SCENE_MEDIA_TYPE,  // "application/vnd.inklet.scene+json;version=1"
@@ -74,10 +98,11 @@ const data = await inklet.request<MyType>("/api/sdk/v1/displays");
 <SdkType file="client" name="InkletRequestOptions" />
 
 Pass `json` to send a JSON body — it sets `content-type` and serializes for
-you. Passing both `json` and a non-null `body` throws.
+you. Passing both `json` and a non-null `body` throws. `timeoutMs` overrides the
+client's for this request, and runs until the body has been read.
 
-Every request automatically carries `authorization: Bearer …` and
-`accept: application/json`, and sets `redirect: "error"`.
+Every request automatically carries `authorization: Bearer …` and — unless you
+set your own — `accept: application/json`, and sets `redirect: "error"`.
 
 <Callout type="warn">
   Paths must be relative to `baseUrl`. Absolute URLs, protocol-relative paths
@@ -99,7 +124,8 @@ const response = await inklet.requestRaw("/api/sdk/v1/analyses/an_1/events/strea
 ```
 
 Non-2xx responses still throw the usual typed errors, so you only ever receive
-a successful response. This is for endpoints whose body must be consumed
+a successful response. `timeoutMs` covers only the wait for the headers, so a
+body that stays open for minutes is not cut off; stop it with `signal`. This is for endpoints whose body must be consumed
 incrementally — the [Analysis event stream](/api/events) is the one the SDK
 itself uses it for. `request()` is the right choice for everything else.
 

@@ -41,18 +41,9 @@ intent to steer.
 
 All three return the same shape:
 
-```ts
-interface PushResult {
-  contentId: string;
-  analysisId: string;
-  /** The Analysis state, not the Content state. */
-  state: "queued" | "running" | "completed" | "failed";
-  presentationIds: readonly string[];
-  idempotencyKey: string;
-  content: Content;
-  analysis: Analysis;
-}
-```
+<SdkType file="push" name="PushResult" />
+
+`state` is the **Analysis** state, not the Content state.
 
 <Callout type="warn">
   `presentationIds` is commonly **empty** on return, and `state` is commonly
@@ -63,6 +54,13 @@ interface PushResult {
 
 One idempotency key covers both writes: the Content and the Analysis are
 created under the same key, in their own namespaces.
+
+A push is two requests that each create something, and neither is retried
+automatically. If either fails, the error's `idempotencyKey` is the key both
+used — generated or not — and calling the same push again with it picks up
+whatever the first attempt created instead of making it twice. Every push also
+takes an optional second argument, `{ signal, timeoutMs }`; see
+[Timeouts and retries](/reliability).
 
 ## What `intent` is for
 

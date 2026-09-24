@@ -129,14 +129,7 @@ degraded.
 
 ### `plan.rejected`
 
-```ts
-interface PlanRejectedData {
-  /** How many problems were found, not what they were. */
-  problems: number;
-  reason: "layout_mismatch" | "target" | "content_refs" | "schema" | "other";
-  attempt: number;
-}
-```
+<SdkType file="events" name="PlanRejectedData" />
 
 | `reason` | What the plan got wrong |
 | --- | --- |
@@ -166,35 +159,11 @@ A run of related agent steps arrives as **one activity** rather than one event
 per step. This is the public shape of agent progress; individual tool calls are
 not published.
 
-```ts
-interface AgentActivityData {
-  /** Stable for the life of one activity, unique within an `attempt`. */
-  activityId: string;
-  kind:
-    | "reading_brief"
-    | "reading_notes"
-    | "checking_display"
-    | "choosing_layout"
-    | "submitting_plan"
-    | "retrying"
-    | "other";
-  state: "active" | "done" | "failed";
-  /** Steps folded into this activity so far. */
-  steps: number;
-  stats: AgentActivityStats;
-}
+<SdkType file="events" name="AgentActivityData" />
 
-interface AgentActivityStats {
-  notesRead?: number;
-  layoutsSeen?: number;
-  /** The layout the agent settled on; `null` means "looked, not settled". */
-  chosen?: string | null;
-  failedSteps?: number;
-  /** Steps the workspace guard refused. */
-  deniedSteps?: number;
-}
-```
+<SdkType file="events" name="AgentActivityStats" />
 
+`chosen: null` means the agent looked at layouts but has not settled on one.
 Every `stats` field is **absent rather than `0`** when it does not apply:
 "read no notes" and "this kind of activity does not count notes" are two
 different statements.
@@ -242,6 +211,13 @@ because what it means depends on counters that change while the activity runs.
 It is pure and English-only, and nothing in the SDK branches on the strings it
 returns — they are display copy, and they change.
 
+Values added after your SDK version still get a line: an activity `kind` it
+does not know is described from its step count, like `other`; an activity
+`state` it does not know reads as still running; and a rejection `reason` it
+does not know gets the generic "sent back" sentence. The same goes for
+`source` and `level` on every event — a value this SDK has not seen arrives as
+its own string.
+
 ## Reading the stream
 
 <div className="fd-steps [&_h3]:fd-step">
@@ -261,6 +237,7 @@ Follows the run and ends on its own once the Analysis is `completed` or
 | `signal` | — | Aborting throws `OperationAbortedError`. |
 | `pollIntervalMs` | `1000` | Only used by the polling fallback. |
 | `reconnectDelayMs` | `500` | Doubled per attempt, five attempts maximum. |
+| `timeoutMs` | client's | How long each connection attempt may take to answer. It never cuts off a stream that has started — events can be minutes apart. |
 
 ### `timeline()` — after the fact
 
@@ -269,7 +246,9 @@ timeline(analysisId: string, options?: TimelineOptions): AsyncIterable<AnalysisE
 ```
 
 The same events, paged for you. `pageSize` defaults to 100 and accepts 1–200;
-`after` starts past a `seq` you already have. It works on a running Analysis as
+`after` starts past a `seq` you already have; `timeoutMs` bounds each page
+request. Up to three failed page reads in a row — a dropped connection, a
+timeout, or HTTP 408, 429, 500, 502, 503, or 504 — are retried with back-off. It works on a running Analysis as
 well as a finished one.
 
 ### `listEvents()` — one page
@@ -278,16 +257,7 @@ well as a finished one.
 listEvents(analysisId: string, options?: ListAnalysisEventsOptions): Promise<AnalysisEventPage>
 ```
 
-```ts
-interface AnalysisEventPage {
-  items: readonly AnalysisEvent[];
-  /** Pass back as `after` to read the next page; `null` at the end. */
-  nextAfter: number | null;
-  hasMore: boolean;
-  /** The Analysis state when the page was produced. */
-  state: AnalysisState;
-}
-```
+<SdkType file="events" name="AnalysisEventPage" />
 
 `after` is an exclusive lower bound on `seq` and accepts 0 or more; `limit`
 accepts 1–200 and defaults to 50. A `limit` outside that range is a `400`, not
@@ -307,12 +277,15 @@ a silent clamp.
 `watch()` handles the transport, and you receive the same events either way:
 
 - It reads server-sent events and resumes from the last `seq` with
-  `Last-Event-ID` when the connection drops — five attempts, exponential
-  back-off capped at 30 seconds — so nothing is lost across a reconnect.
+  `Last-Event-ID` when the connection drops, or when reconnecting is answered
+  with 408, 429, 500, 502, 503, or 504 — five attempts, exponential back-off
+  capped at 30 seconds, never sooner than `Retry-After` — so nothing is lost
+  across a reconnect.
 - If the response is not `text/event-stream`, which is what an intermediate
   proxy that cannot carry streaming responses returns, it falls back to polling
   `listEvents()` every `pollIntervalMs` until the Analysis is terminal.
-- Breaking out of the `for await` loop closes the connection.
+- `signal` stops it with `OperationAbortedError`, even mid-read of an open
+  stream. Breaking out of the `for await` loop closes the connection.
 
 ## Relaying to a browser
 

@@ -29,18 +29,10 @@ const result = await inklet.push.auto({
 ## Signature
 
 ```ts
-inklet.push.auto(input: AutoPushInput): Promise<AutoPushResult>
+inklet.push.auto(input: AutoPushInput, options?: CallOptions): Promise<AutoPushResult>
 ```
 
-```ts
-interface AutoPushInput {
-  assets: readonly InkletAsset[];
-  title?: string;
-  intent?: string;
-  context?: "submitted" | "history";
-  idempotencyKey?: string;
-}
-```
+<SdkType file="push" name="AutoPushInput" />
 
 `displayId` is not accepted. Auto is defined by naming no target, which is what
 lets the agent choose.
