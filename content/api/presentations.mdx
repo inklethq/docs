@@ -40,15 +40,14 @@ const page = await inklet.presentations.list({
 });
 ```
 
-```ts
-interface ListPresentationsOptions {
-  scope?: "generated" | "display" | "all";
-  state?: PresentationState;
-  displayId?: string;
-  cursor?: string;
-  limit?: number;
-}
-```
+<SdkType file="presentations" name="ListPresentationsOptions" />
+
+<Callout type="warn">
+  Without a `displayId`, `scope` defaults to `generated`, so a bare
+  `presentations.list()` returns display-free Presentations and none of the
+  display ones. Ask for `scope: "display"` or `scope: "all"` when you want
+  frames that went to a panel.
+</Callout>
 
 ### Filtering by display
 
@@ -80,15 +79,7 @@ display half just the same.
 
 ### The history window
 
-```ts
-interface PresentationPage {
-  items: readonly Presentation[];
-  nextCursor: string | null;
-  hasMore: boolean;
-  /** How far back this list is allowed to see, as an RFC3339 UTC timestamp. */
-  historyWindowStart: string | null;
-}
-```
+<SdkType file="presentations" name="PresentationPage" />
 
 The plan caps how much display history a list may reach. The backend **clamps
 instead of refusing**: Presentations created before the floor are left out of
@@ -106,8 +97,10 @@ if (history.historyWindowStart) {
 Read it as the floor of what you are showing, not as an error. Nothing is
 deleted — after an upgrade the same call returns the older rows untouched.
 
-`historyWindowStart` is `null` when nothing was clipped, which covers both an
-unlimited plan and a read with no display half (`scope: "generated"`). Only the
+`historyWindowStart` is reported whenever a floor applies, not only when rows
+were actually left out — so it is safe to render as "history starts here" on a
+page that happens to be short. It is `null` when no floor applies: an unlimited
+plan, or a read with no display half (`scope: "generated"`). Only the
 display half is capped, so `scope: "display"` and `scope: "all"` can report a
 floor. `displays.listQueue()`, `displays.current()`, and
 `presentations.retrieve()` are unaffected: a Presentation whose id you already
@@ -115,29 +108,7 @@ hold stays readable either way. See [Plans](/plans#history-depth).
 
 ## The `Presentation` type
 
-```ts
-interface Presentation {
-  id: string;
-  /** Derived from whether `displayId` is present. */
-  kind: "generated" | "display";
-  displayId: string | null;
-  /** The Analysis that produced it. */
-  analysisId: string | null;
-  contentIds: readonly PresentationContentRef[];
-  /** Whether the model produced it. Same values as `Analysis.mode`. */
-  mode: "ai" | "direct";
-  state: PresentationState;
-  title: string | null;
-  output: PresentationOutput | null;
-  scene: PresentationScene | null;
-  renditions: readonly PresentationRendition[];
-  /** @deprecated Prefer `renditions`; this remains for display reads. */
-  image: PresentationImage | null;
-  failure: PresentationProblem | null;
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="presentations" name="Presentation" />
 
 ### States
 
@@ -185,12 +156,7 @@ Presentations stored before titles were resolved at acceptance.
 
 ### Which Contents are behind it
 
-```ts
-interface PresentationContentRef {
-  id: string;
-  role: "input" | "context";
-}
-```
+<SdkType file="presentations" name="PresentationContentRef" />
 
 `input` means the caller named the Content in the Analysis `contentIds`;
 `context` means the agent retrieved it from the user's history and used it. The
@@ -199,23 +165,7 @@ the `context` refs. A Content appears at most once.
 
 ### Renditions and images
 
-```ts
-type PresentationRenditionState = "preparing" | "ready" | "failed";
-
-interface PresentationRendition {
-  id: string;
-  mediaType: "image/png";
-  format: "png";
-  width: number;
-  height: number;
-  colorMode: "color" | "grayscale" | "monochrome";
-  state: PresentationRenditionState;
-  url: string | null;
-  expiresAt: string | null;
-  updatedAt: string;
-  failure: PresentationProblem | null;
-}
-```
+<SdkType file="presentations" name="PresentationRendition" />
 
 Each rendition has its own lifecycle, independent of the Presentation's
 `state`. `preparing` means the render has not landed yet — read the
@@ -273,14 +223,7 @@ console.log(presentation.scene?.data);
 console.log(presentation.renditions[0]?.url);
 ```
 
-```ts
-interface PresentationOutputRequest {
-  formats?: readonly ("scene" | "png")[];
-  preset?: string;
-  viewport?: { width: number; height: number };
-  colorMode?: "color" | "grayscale" | "monochrome";
-}
-```
+<SdkType file="scene" name="PresentationOutputRequest" />
 
 `preset` and `viewport` are mutually exclusive, and `formats` defaults to both.
 Viewport dimensions are integers between 1 and 8192. Passing `mode: "hardcode"`
@@ -289,7 +232,26 @@ AI.
 
 An `{ output }` target always produces exactly one Presentation, so
 `waitUntilReady()` returns it. It throws `NoChangeError` only when it is handed
-an Analysis that named no `contentIds` and completed as `no_change`.
+an Analysis that named no `contentIds` and completed as `no_change`, and
+`MultiplePresentationsError` — with `presentationIds` — when it is handed one
+that produced several, such as an Analysis pinned to several displays. Use
+`analyses.wait()` for those.
+
+`waitUntilReady()` waits for the Analysis, which settles once the Scene is
+stored; the pixels can still be rendering, so check a rendition's `url` before
+using it.
+
+`preset` names a size. With neither `preset` nor `viewport`, inklet uses
+`default`:
+
+| `preset` | Viewport |
+| --- | --- |
+| `default` | 800 × 480 — the panel geometry |
+| `macos-widget-small` | 170 × 170 |
+| `macos-widget-medium` | 360 × 170 |
+| `macos-widget-large` | 360 × 376 |
+
+An unknown preset is refused with `code: "invalid_request"`.
 
 ### Scene JSON
 
@@ -299,25 +261,16 @@ renditions:
 ```ts
 import { INKLET_SCENE_MEDIA_TYPE } from "@inklethq/sdk";
 // "application/vnd.inklet.scene+json;version=1"
-
-interface InkletScene {
-  version: 1;
-  viewport: { width: number; height: number };
-  background: string;
-  elements: readonly InkletSceneElement[];
-}
-
-interface InkletSceneElement {
-  id: string;
-  type: "text" | "image" | "shape";
-  frame: { x: number; y: number; width: number; height: number };
-  properties: Readonly<Record<string, unknown>>;
-}
 ```
+
+<SdkType file="scene" name="InkletScene" />
+
+<SdkType file="scene" name="InkletSceneElement" />
 
 A v1 renderer must handle `text`, `image`, and `shape`. Element-specific
 styling lives in `properties`, so inklet can add an optional style without a
-new SDK release.
+new SDK release. An element type added later arrives as its own string rather
+than failing the Presentation — skip one you cannot draw.
 
 ### `render()`
 

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: inklet SDK HTTP API
-  version: 0.2.1
+  version: 0.3.1
   description: |
     The public HTTP contract used by `@inklethq/sdk`.
 
@@ -254,18 +254,33 @@ paths:
       tags: [Contents]
       operationId: listContents
       summary: List contents
+      description: |
+        Newest first. `q` searches the library: every whitespace-separated
+        term must appear on the same Content — in its title, or in an asset's
+        text, link, or filename, or in what inklet read out of an image or
+        file. Matching is case-insensitive and by substring, so CJK text
+        matches without word breaks. Paging and ordering are the same as
+        without `q`.
       x-codeSamples:
         - id: sdk-list-contents
           lang: ts
           label: TypeScript SDK
           source: |
             const page = await inklet.contents.list({ state: "ready", limit: 20 });
+            const found = await inklet.contents.list({ q: "dentist thursday" });
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
         - name: state
           in: query
           schema: { $ref: "#/components/schemas/ContentState" }
+        - name: q
+          in: query
+          description: |
+            Search terms. Leading and trailing whitespace is ignored, and a
+            blank value means no filter. Longer than 200 characters is
+            `400 invalid_request`.
+          schema: { type: string, maxLength: 200 }
       responses:
         "200":
           description: A cursor page of contents.

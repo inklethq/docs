@@ -30,21 +30,7 @@ console.log(done.outcome, done.presentationIds);
 analyze(input?: AnalyzeInput): Promise<Analysis>
 ```
 
-```ts
-interface AnalyzeInput {
-  /** Omit or leave empty to analyze recent history without new Content. */
-  contentIds?: readonly string[];
-  /** Defaults to `submitted` when `contentIds` is given, else `history`. */
-  context?: AnalysisContext;
-  /** Only meaningful with `context: "history"`. */
-  scope?: AnalysisScopeInput;
-  intent?: string | null;
-  title?: string | null;
-  /** Omit to let the agent choose Displays. */
-  target?: AnalysisTargetInput;
-  idempotencyKey?: string;
-}
-```
+<SdkType file="analyses" name="AnalyzeInput" />
 
 | Option | What it does |
 | --- | --- |
@@ -60,6 +46,11 @@ interface AnalyzeInput {
 `history` when it is empty. `context: "submitted"` with no `contentIds` throws
 `ConfigurationError`, and so does `scope` on anything but `history`.
 
+`analyze()` is never retried automatically. If it fails — a timeout, a dropped
+connection, a `5xx` — the Analysis may already exist, so call it again with
+`error.idempotencyKey`, the key it sent (generated when you passed none), rather
+than a fresh one.
+
 ## `direct()`
 
 One uploaded image shown as sent, with no AI:
@@ -68,14 +59,7 @@ One uploaded image shown as sent, with no AI:
 direct(input: DirectInput): Promise<Analysis>
 ```
 
-```ts
-interface DirectInput {
-  /** A Content holding exactly one PNG or JPEG image. */
-  contentId: string;
-  target: AnalysisTargetInput;
-  idempotencyKey?: string;
-}
-```
+<SdkType file="analyses" name="DirectInput" />
 
 A direct Analysis requires exactly one `contentId`, `context: "submitted"`, and
 a target. inklet scales the image to the target geometry server-side, which is
@@ -127,16 +111,7 @@ const page = await inklet.analyses.list({
 });
 ```
 
-```ts
-interface ListAnalysesOptions {
-  /** Only Analyses that listed this Content in contentIds (role "input"). */
-  contentId?: string;
-  state?: AnalysisState;
-  trigger?: AnalysisTrigger;
-  cursor?: string;
-  limit?: number;
-}
-```
+<SdkType file="analyses" name="ListAnalysesOptions" />
 
 `trigger` is `api` for the ones you started and `scheduled` for the ones
 inklet runs on the user's behalf. An out-of-range `state`, `trigger`, or
@@ -158,8 +133,12 @@ throws `AnalysisFailedError`, with the backend's own code on
 | Option | Default | Range |
 | --- | --- | --- |
 | `pollIntervalMs` | `1000` | 100–60,000 |
-| `timeoutMs` | `120000` | 1–1,800,000 |
-| `signal` | — | Aborting throws `OperationAbortedError` |
+| `timeoutMs` | `120000` | 1–1,800,000 — a hard deadline for the whole wait, including a read in flight |
+| `signal` | — | Aborting throws `OperationAbortedError`, and cancels a read in flight |
+
+A state this SDK does not know is not treated as final. Up to three failed
+reads in a row — a dropped connection, a timeout, or HTTP 408, 429, 500, 502,
+503, or 504 — are retried with back-off before the error is thrown.
 
 <Callout>
   The 120-second default suits a `submitted` Analysis. Analyses with
@@ -171,27 +150,7 @@ throws `AnalysisFailedError`, with the backend's own code on
 
 ## The `Analysis` type
 
-```ts
-interface Analysis {
-  id: string;
-  mode: "ai" | "direct";
-  trigger: "api" | "scheduled";
-  state: "queued" | "running" | "completed" | "failed";
-  outcome: "presentations" | "no_change" | null;
-  noChangeReason: string | null;
-  contentIds: readonly string[];
-  context: "submitted" | "history";
-  scope: AnalysisScope | null;
-  intent: string | null;
-  title: string | null;
-  /** `null` means the agent chose (or will choose) the Displays. */
-  target: AnalysisTarget | null;
-  presentationIds: readonly string[];
-  failure: PresentationProblem | null;
-  createdAt: string;
-  updatedAt: string;
-}
-```
+<SdkType file="analyses" name="Analysis" />
 
 ### States
 
@@ -218,14 +177,7 @@ covers it or fails the Analysis with `no_presentable_content`.
 
 ### Scope and the history window
 
-```ts
-interface AnalysisScope {
-  /** What you asked for: a relative duration such as "24h", "7d", "90m". */
-  since: string;
-  /** The absolute start the backend resolved at creation time, or null. */
-  sinceAt: string | null;
-}
-```
+<SdkType file="analyses" name="AnalysisScope" />
 
 `since` is resolved to an absolute `sinceAt` when the Analysis is created, so
 an Analysis that sits in `queued` still reads the window it was created with.

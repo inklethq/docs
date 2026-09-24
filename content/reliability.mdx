@@ -1,0 +1,123 @@
+---
+title: Timeouts and retries
+description: How the inklet SDK bounds every request in time, cancels calls with an AbortSignal, and which failures it retries for you.
+---
+
+
+Every request the SDK sends has a timeout, every call can be cancelled, and the
+calls that only read ride out a flaky network on their own. The calls that
+create or change something are never retried for you — that is what
+[idempotency keys](/lifecycle#idempotency) are for.
+
+## Timeouts
+
+Two clocks are set on the client:
+
+```ts
+const inklet = new Inklet({
+  pat: process.env.INKLET_PAT!,
+  timeoutMs: 30_000,        // each API request — default 60 s
+  uploadTimeoutMs: 600_000, // each binary upload to storage — default 5 min
+});
+```
+
+| Option | Covers | Default |
+| --- | --- | --- |
+| `timeoutMs` | One API request, from sending it until its response has been read in full | 60,000 ms |
+| `uploadTimeoutMs` | One asset's upload to storage | 300,000 ms |
+
+Uploads get their own clock because they move the file itself: five minutes
+carries a full 10 MiB asset at about 280 kbit/s. An upload that runs out of time
+is a failed upload like any other, so it is refreshed and tried once more
+before `AssetUploadError`.
+
+A request that runs out of time throws `RequestTimeoutError` — a
+`NetworkError` with `code: "request_timed_out"` and the `timeoutMs` that
+applied.
+
+## Per call
+
+Every method that talks to inklet takes `{ signal, timeoutMs }` as its last
+argument, or inside the options object it already has:
+
+```ts
+const controller = new AbortController();
+
+const page = await inklet.displays.list({ limit: 20, signal: controller.signal });
+const display = await inklet.displays.retrieve(page.items[0].id, { timeoutMs: 5_000 });
+await inklet.push.auto({ assets }, { timeoutMs: 20_000 });
+```
+
+A per-call `timeoutMs` applies to **each request** the call sends, not to the
+call as a whole — a push sends several. For an overall limit, pass
+`AbortSignal.timeout(ms)` as the `signal`:
+
+```ts
+await inklet.push.auto({ assets }, { signal: AbortSignal.timeout(45_000) });
+```
+
+A storage upload keeps the client's `uploadTimeoutMs` whatever the call says.
+
+## Cancelling
+
+Aborting a `signal` cancels the request in flight — including inside the
+waiting helpers, `watch()`, and `timeline()` — and the call rejects with
+`OperationAbortedError`, with the signal's reason as its `cause`.
+
+<Callout type="warn">
+  Neither an abort nor a timeout undoes anything inklet had already accepted. A
+  push aborted after its upload may have stored the Content; retry it with the
+  error's `idempotencyKey` rather than a fresh one.
+</Callout>
+
+## Waiting helpers
+
+`analyses.wait()`, `presentations.waitUntilReady()`,
+`contents.waitUntilReady()`, and `displays.waitUntilCurrent()` take their own
+`timeoutMs`, and it is a hard deadline for the whole wait: a read still in
+flight when it runs out is cancelled. The wait then throws
+`OperationTimeoutError`, and the thing you were waiting for carries on — read it
+again later to see it finish.
+
+## Streams
+
+On `analyses.watch()` and `requestRaw()`, `timeoutMs` only covers getting the
+response headers. A stream that runs for minutes is not cut off by it; stop one
+with `signal`, or by breaking out of the `for await` loop.
+
+## What is retried for you
+
+The calls that only read — the waiting helpers, `timeline()`, and `watch()`'s
+polling fallback — ride out up to **three transient failures in a row**:
+
+- a dropped connection or a request timeout
+- HTTP 408, 429, 500, 502, 503, or 504
+
+They back off from the poll interval, doubling up to 30 seconds, and never
+retry sooner than the response's `Retry-After`. A `429` that means a spent
+allowance (`quota_exceeded`) is not retried, and neither is a `Retry-After`
+longer than 60 seconds: that error is thrown with `retryAfterMs` set, so you can
+decide.
+
+`watch()` reconnects on the same failures, up to five attempts in a row,
+resuming from the last event it delivered.
+
+## What is not
+
+Everything that creates or changes something — `contents.upload()` and
+`.create()`, `analyze()`, `direct()`, `push.*`, `presentations.generate()` and
+`.render()`, `displays.setCurrent()` and `.advance()` — is sent once. If it
+fails, you decide:
+
+| Error | Retry? |
+| --- | --- |
+| `ConfigurationError` | No — fix the call. |
+| `NetworkError`, `RequestTimeoutError` | Yes, with `error.idempotencyKey` where there is one. |
+| `RateLimitError`, `code: "rate_limited"` | Yes, after `error.retryAfterMs`. |
+| `RateLimitError`, `code: "quota_exceeded"` | Not until `details.resetAt`, or an upgrade. |
+| `ApiError` with status 500–504 | Yes, with `error.idempotencyKey`. |
+| Anything else from the API | Only once the cause is fixed. |
+
+`displays.advance()` has no idempotency key, and a retry after a lost response
+would skip a second image. Read the display first and check
+`pendingPresentationId` before calling it again.

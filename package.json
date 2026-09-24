@@ -10,7 +10,7 @@
     "check": "pnpm types:check && pnpm build"
   },
   "dependencies": {
-    "@inklethq/sdk": "0.1.0",
+    "@inklethq/sdk": "0.3.1",
     "fumadocs-core": "16.15.0",
     "fumadocs-mdx": "15.3.1",
     "fumadocs-openapi": "11.3.0",

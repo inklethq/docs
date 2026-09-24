@@ -13,6 +13,7 @@ class InkletError extends Error {
   readonly status: number | undefined;
   readonly requestId: string | undefined;
   readonly details: Readonly<Record<string, unknown>> | undefined;
+  readonly idempotencyKey: string | undefined;
 
   toJSON(): Record<string, unknown>;
 }
@@ -54,11 +55,13 @@ Error
     ├── AssetUploadError            asset_upload_failed
     ├── AnalysisFailedError         analysis_failed
     ├── NoChangeError               analysis_no_change
+    ├── MultiplePresentationsError  analysis_multiple_presentations
     ├── OperationTimeoutError       operation_timed_out
     ├── OperationAbortedError       operation_aborted
     ├── ApiError                    api_error
     ├── InvalidResponseError        invalid_response
     └── NetworkError                network_error
+        └── RequestTimeoutError     request_timed_out
 ```
 
 The codes above are the SDK's own defaults. For anything the service answered,
@@ -69,7 +72,7 @@ plan gate is a `PermissionDeniedError` whose `code` is `plan_upgrade_required`.
 
 | Class | When |
 | --- | --- |
-| `ConfigurationError` | Bad options, bad asset, bad limit, bad idempotency key, a path that would leave the origin |
+| `ConfigurationError` | Bad options, bad asset, bad limit, bad idempotency key, a bad timeout, an id of `.` or `..`, a path that would leave the origin |
 | `BrowserEnvironmentError` | A `document` exists — this is not a trusted environment |
 
 These are programming errors. Retrying will not help.
@@ -88,6 +91,11 @@ These are programming errors. Retrying will not help.
 
 So a `402` or a `422` reaches you as an `ApiError` with the service's code and
 status intact. Branch on `error.code` for those.
+
+`RateLimitError` and `ApiError` also carry `retryAfterMs`: the response's
+`Retry-After`, in milliseconds, or `null` when it sent none. A response that is
+not JSON at all — a proxy's error page, say — becomes a short message with its
+status and a brief excerpt, never the whole page.
 
 ## Service error codes
 
@@ -216,6 +224,7 @@ not help. See [Plans](/plans).
 | --- | --- |
 | `AnalysisFailedError` | `analyses.wait()` found the Analysis `failed`. `details` has `stage`, `retryable`, `backendCode`, and `analysisId`. |
 | `NoChangeError` | `presentations.waitUntilReady()` was handed an Analysis that completed as `no_change`. `details` has `analysisId` and `reason`. |
+| `MultiplePresentationsError` | `presentations.waitUntilReady()` was handed an Analysis that produced several Presentations — one pinned to several displays, say. Carries `analysisId` and `presentationIds`; use `analyses.wait()` for those. |
 
 `NoChangeError` is not a failure of the service — it is a normal completion
 that the caller required a Presentation from. It is only reachable for an
@@ -226,17 +235,22 @@ Analysis that named no `contentIds`.
 | Class | When |
 | --- | --- |
 | `OperationTimeoutError` | A `wait*` helper ran out of `timeoutMs`. The work is **not** cancelled. |
-| `OperationAbortedError` | The `AbortSignal` you passed fired. |
+| `OperationAbortedError` | The `AbortSignal` you passed fired. The request in flight is cancelled, and the signal's reason is the error's `cause`. |
+
+See [Timeouts and retries](/reliability).
 
 ## Transport and parsing
 
 | Class | When |
 | --- | --- |
-| `NetworkError` | The service was unreachable, or the connection closed mid-response |
+| `NetworkError` | No response arrived: the service was unreachable, or the connection closed mid-response |
+| `RequestTimeoutError` | A `NetworkError`: one request ran past its timeout. Carries `timeoutMs`. |
 | `InvalidResponseError` | A 2xx response the SDK could not parse or trust |
 
-`InvalidResponseError` is deliberately strict: the SDK validates the shape of
-every response and refuses to hand you a half-parsed object. If you see it
+The SDK validates the shape of every response and refuses to hand you a
+half-parsed object. It is deliberately **not** strict about values inklet may
+add later: a `state`, `mode`, or event `type` it has never seen reads through
+as a string instead of failing. If you see `InvalidResponseError`
 consistently, the client and service versions are probably out of step.
 
 ## `AssetUploadError`
@@ -265,7 +279,18 @@ try {
 }
 ```
 
-`failedAssetIndexes` maps back to the array you passed in.
+`failedAssetIndexes` maps back to the array you passed in, and `cause` is the
+underlying failure of the first asset that still failed.
+
+## `idempotencyKey` on errors
+
+Every error from a call that sent an `Idempotency-Key` carries it — including
+one the SDK generated because you passed none. A call that failed after sending
+may still have created something: the Content was stored before its upload
+broke, or the Analysis was accepted and only the response was lost. Retry with
+`idempotencyKey: error.idempotencyKey` and the same input to pick up what the
+first attempt created instead of creating it twice. See
+[Idempotency](/lifecycle#idempotency).
 
 ## A practical handler
 
@@ -297,8 +322,13 @@ async function push() {
       throw error; // not transient; the plan has to change first
     }
 
+    if (error instanceof RateLimitError && error.code === "quota_exceeded") {
+      throw error; // only time or an upgrade clears this — see details.resetAt
+    }
+
     if (error instanceof RateLimitError || error instanceof NetworkError) {
-      return scheduleRetry(); // transient
+      // Transient. Reuse the key so the retry cannot create a second push.
+      return scheduleRetry({ idempotencyKey: error.idempotencyKey });
     }
 
     if (error instanceof InkletError) {
