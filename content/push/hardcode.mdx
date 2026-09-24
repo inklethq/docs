@@ -27,16 +27,10 @@ const result = await inklet.push.hardcode({
 ## Signature
 
 ```ts
-inklet.push.hardcode(input: HardcodePushInput): Promise<HardcodePushResult>
+inklet.push.hardcode(input: HardcodePushInput, options?: CallOptions): Promise<HardcodePushResult>
 ```
 
-```ts
-interface HardcodePushInput {
-  displayId: string;
-  image: ImageAsset;
-  idempotencyKey?: string;
-}
-```
+<SdkType file="push" name="HardcodePushInput" />
 
 Note that `image` is a single asset, not an array — the shape enforces the rule.
 There is no `intent` or `context`: nothing is being reasoned about.
